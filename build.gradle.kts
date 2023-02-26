@@ -19,6 +19,8 @@ java {
 
 dependencies {
 	implementation("com.github.spotbugs:spotbugs-annotations:4.7.3")
+	implementation("com.github.ben-manes.caffeine:caffeine:3.1.4")
+	implementation("org.apache.commons:commons-lang3:3.12.0")
 
 	implementation("org.json:json:20220924")
 	implementation("net.dv8tion:JDA:5.0.+") {
