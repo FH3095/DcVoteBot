@@ -44,7 +44,7 @@ public class Db {
 	public class LockHolder implements AutoCloseable {
 		private final long serverId;
 		private final Throwable startException;
-		private ReentrantLock lock;
+		private @CheckForNull ReentrantLock lock;
 
 		private LockHolder(final long serverId) {
 			this.serverId = serverId;
@@ -72,8 +72,10 @@ public class Db {
 
 		@Override
 		public void close() {
-			lock.unlock();
-			lock = null;
+			if (lock != null) {
+				lock.unlock();
+				lock = null;
+			}
 		}
 	}
 
