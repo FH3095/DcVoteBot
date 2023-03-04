@@ -12,16 +12,23 @@ import org.apache.commons.lang3.Validate;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
+
+@DefaultAnnotation(NonNull.class)
 public class Vote {
+	public static final short MAX_VOTE_OPTIONS = 25;
+
 	public final VoteSettings settings;
 	public final String title;
 	public final String description;
 	public final List<VoteOption> options;
 	public final Instant start;
 
-	/*package*/ Vote(final VoteSettings settings, final String title, final String description,
+	public Vote(final VoteSettings settings, final String title, final String description,
 			final List<VoteOption> options) {
 		Validate.isTrue(!options.isEmpty());
+		Validate.inclusiveBetween(1, MAX_VOTE_OPTIONS, options.size());
 		this.settings = settings;
 		this.title = title;
 		this.description = description;
@@ -37,6 +44,12 @@ public class Vote {
 		this.description = description;
 		this.options = options;
 		this.start = start;
+	}
+
+	public Vote copy() {
+		final List<VoteOption> options = this.options.stream().map(VoteOption::copy)
+				.collect(Collectors.toUnmodifiableList());
+		return new Vote(settings, title, description, options, start);
 	}
 
 	/*package*/ JSONObject toJson() {

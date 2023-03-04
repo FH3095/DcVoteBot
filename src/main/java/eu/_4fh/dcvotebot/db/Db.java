@@ -6,15 +6,22 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
@@ -25,10 +32,14 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.Scheduler;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import eu._4fh.dcvotebot.util.Config;
 import eu._4fh.dcvotebot.util.Log;
 import eu._4fh.dcvotebot.util.TryAgainLaterException;
 
+@DefaultAnnotation(NonNull.class)
 public class Db {
 	public class LockHolder implements AutoCloseable {
 		private final long serverId;
@@ -66,6 +77,15 @@ public class Db {
 		}
 	}
 
+	private static final Db instance = new Db();
+
+	public static Db instance() {
+		return instance;
+	}
+
+	private Db() {
+	}
+
 	private static final String FILE_ENDING = ".json";
 
 	private final Map<Long, ReentrantLock> serverLocks = new ConcurrentHashMap<>();
@@ -74,6 +94,7 @@ public class Db {
 
 	private final LoadingCache<Long, VoteSettings> defaultSettingsCache = buildCache(this::loadDefaultSettings);
 	private final LoadingCache<Pair<Long, Long>, Vote> votesCache = buildCache(this::loadVote);
+	private final LoadingCache<Long, Collection<Long>> allServerVoteIdsCache = buildCache(this::loadAllServerVoteIds);
 
 	private <K, V> LoadingCache<K, V> buildCache(CacheLoader<K, V> loader) {
 		return Caffeine.newBuilder().expireAfterWrite(Duration.ofDays(1)).softValues()
@@ -81,11 +102,11 @@ public class Db {
 	}
 
 	private static String getServerFile(final long serverId) {
-		return "server_" + serverId + FILE_ENDING;
+		return "server_" + Long.toUnsignedString(serverId) + FILE_ENDING;
 	}
 
 	private static String getVoteFile(final long serverId, final long voteId) {
-		return "server_" + serverId + "_vote_" + voteId + FILE_ENDING;
+		return "server_" + Long.toUnsignedString(serverId) + "_vote_" + Long.toUnsignedString(voteId) + FILE_ENDING;
 	}
 
 	private VoteSettings loadDefaultSettings(final long serverId) throws IOException {
@@ -102,6 +123,21 @@ public class Db {
 				dataDir.resolve(getVoteFile(serverAndMsgId.getLeft(), serverAndMsgId.getRight())),
 				StandardCharsets.UTF_8);
 		return Vote.fromJson(new JSONObject(data));
+	}
+
+	private List<Long> loadAllServerVoteIds(final long serverId) throws IOException {
+		final Pattern voteFilePattern = Pattern
+				.compile("^server_" + Long.toUnsignedString(serverId) + "_vote_(\\d+)\\.json$");
+		final List<Long> result = new ArrayList<>();
+		try (final DirectoryStream<Path> files = Files.newDirectoryStream(dataDir)) {
+			files.forEach(file -> {
+				final Matcher match = voteFilePattern.matcher(file.getFileName().toString());
+				if (match.matches()) {
+					result.add(Long.parseUnsignedLong(match.group(1)));
+				}
+			});
+		}
+		return Collections.unmodifiableList(result);
 	}
 
 	public LockHolder getLock(final long serverId) {
@@ -130,7 +166,7 @@ public class Db {
 		defaultSettingsCache.invalidate(lock.serverId);
 	}
 
-	public Vote getVote(final LockHolder lock, final long voteMsgId) {
+	public @CheckForNull Vote getVote(final LockHolder lock, final long voteMsgId) {
 		Validate.notNull(lock);
 		return votesCache.get(Pair.of(lock.serverId, voteMsgId));
 	}
@@ -144,10 +180,17 @@ public class Db {
 			throw new RuntimeException("Cant write " + file, e);
 		}
 		votesCache.invalidate(Pair.of(lock.serverId, voteMsgId));
+		allServerVoteIdsCache.invalidate(lock.serverId);
+	}
+
+	public Collection<Long> getAllServerVoteIds(final LockHolder lock) {
+		Validate.notNull(lock);
+		return allServerVoteIdsCache.get(lock.serverId);
 	}
 
 	/*package for test*/ void forTestResetCaches() {
 		defaultSettingsCache.invalidateAll();
 		votesCache.invalidateAll();
+		allServerVoteIdsCache.invalidateAll();
 	}
 }

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class JsonConvertionsTest {
 	@Test
 	void testVoteSettings() {
-		final VoteSettings in = new VoteSettings(2, 3, false);
+		final VoteSettings in = new VoteSettings(2, 3, false, "UTC");
 		final VoteSettings out = VoteSettings.fromJson(in.toJson());
 		assertThat(out.answersPerUser).isEqualTo(2);
 		assertThat(out.duration.getSeconds()).isEqualTo(3);

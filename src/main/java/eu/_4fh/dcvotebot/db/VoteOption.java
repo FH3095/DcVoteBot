@@ -1,27 +1,33 @@
 package eu._4fh.dcvotebot.db;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
+
+@DefaultAnnotation(NonNull.class)
 public class VoteOption {
 	public final String name;
 	public final Set<Long> voters;
 
-	/*package*/ VoteOption(final String name) {
+	public VoteOption(final String name) {
 		this.name = name;
-		voters = ConcurrentHashMap.newKeySet();
+		voters = Collections.emptySet();
 	}
 
-	private VoteOption(final String name, final JSONArray voters) {
+	private VoteOption(final String name, final Set<Long> voters) {
 		this.name = name;
-		this.voters = ConcurrentHashMap.newKeySet(voters.length());
-		for (int i = 0; i < voters.length(); ++i) {
-			this.voters.add(voters.getLong(i));
-		}
+		this.voters = voters;
+	}
+
+	public VoteOption copy() {
+		return new VoteOption(name, new HashSet<>(voters));
 	}
 
 	/*package*/ JSONObject toJson() {
@@ -32,7 +38,12 @@ public class VoteOption {
 	}
 
 	/*package*/ static VoteOption fromJson(final JSONObject obj) {
-		return new VoteOption(obj.getString("name"), obj.getJSONArray("voters"));
+		final JSONArray jsonVoters = obj.getJSONArray("voters");
+		final Set<Long> voters = new HashSet<>();
+		for (int i = 0; i < jsonVoters.length(); ++i) {
+			voters.add(jsonVoters.getLong(i));
+		}
+		return new VoteOption(obj.getString("name"), voters);
 	}
 
 	@Override

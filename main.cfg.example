@@ -1,0 +1,8 @@
+
+db.lockWaitTimeout=5
+db.dataDir=data
+
+discord.shards=1
+discord.token=abcdef
+
+interaction.timeoutMinutes=15

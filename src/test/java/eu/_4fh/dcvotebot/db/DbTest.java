@@ -31,7 +31,7 @@ class DbTest {
 
 	@BeforeEach
 	void before() {
-		db = new Db();
+		db = Db.instance();
 	}
 
 	@AfterEach
@@ -134,7 +134,7 @@ class DbTest {
 		}
 		assertThat(settings).isEqualTo(VoteSettings.getDefault());
 		final VoteSettings newSettings = new VoteSettings(settings.answersPerUser, settings.duration.getSeconds(),
-				!settings.canChangeAnswers);
+				!settings.canChangeAnswers, "UTC");
 		try (LockHolder lock = db.getLock(1)) {
 			db.setDefaultSettings(lock, newSettings);
 		}
@@ -211,5 +211,23 @@ class DbTest {
 			vote = db.getVote(lock, 1);
 		}
 		assertThat(vote.options.get(0).voters).containsExactlyInAnyOrder(1L);
+	}
+
+	@Test
+	void testGetAllServerVotes() {
+		try (LockHolder lock = db.getLock(1)) {
+			final Vote vote = new Vote(VoteSettings.getDefault(), "Title", "Desc",
+					Collections.singletonList(new VoteOption("Opt")));
+			db.setVote(lock, Long.MAX_VALUE, vote);
+			db.setVote(lock, Long.MIN_VALUE, vote);
+			db.setVote(lock, -1, vote);
+		}
+
+		try (LockHolder lock = db.getLock(2)) {
+			assertThat(db.getAllServerVoteIds(lock)).isEmpty();
+		}
+		try (LockHolder lock = db.getLock(1)) {
+			assertThat(db.getAllServerVoteIds(lock)).containsExactlyInAnyOrder(-1L, Long.MAX_VALUE, Long.MIN_VALUE);
+		}
 	}
 }

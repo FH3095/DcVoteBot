@@ -1,0 +1,144 @@
+package eu._4fh.dcvotebot.discord;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import eu._4fh.dcvotebot.db.Db;
+import eu._4fh.dcvotebot.db.Db.LockHolder;
+import eu._4fh.dcvotebot.db.Vote;
+import eu._4fh.dcvotebot.db.VoteOption;
+import eu._4fh.dcvotebot.db.VoteSettings;
+import eu._4fh.dcvotebot.discord.CommandUtil.OptionValueException;
+import eu._4fh.dcvotebot.discord.CreateVoteHandler.CreateVoteData;
+import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
+import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
+import net.dv8tion.jda.api.interactions.components.text.TextInput;
+import net.dv8tion.jda.api.interactions.components.text.TextInputStyle;
+import net.dv8tion.jda.api.interactions.modals.Modal;
+import net.dv8tion.jda.api.interactions.modals.ModalMapping;
+
+@DefaultAnnotation(NonNull.class)
+/*package*/ class CreateVoteHandler extends AbstractCommandHandler<CreateVoteData> {
+	/*package*/ static class CreateVoteData {
+		private final String title;
+		private final String description;
+		private final @CheckForNull Duration duration;
+		private final @CheckForNull Integer votesPerUser;
+		private final @CheckForNull Boolean canChangeVote;
+
+		private CreateVoteData(final String title, final String description, final @CheckForNull Duration duration,
+				final @CheckForNull Integer votesPerUser, final @CheckForNull Boolean canChangeVote) {
+			this.title = title;
+			this.description = description;
+			this.duration = duration;
+			this.votesPerUser = votesPerUser;
+			this.canChangeVote = canChangeVote;
+		}
+	}
+
+	private static final String START_VOTE_BUTTON_PREFIX = "voteBtn";
+	private static final String START_VOTE_DIALOG_PREFIX = "startVoteDialog";
+
+	/*package*/ CreateVoteHandler(final Bot bot) {
+		super(bot, "cr-vo", "create-vote");
+	}
+
+	@Override
+	@SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF", justification = "False-positive")
+	protected SlashCommandData createCommandData() {
+		SlashCommandData commandData = Commands.slash(command, "Creates a new vote").setGuildOnly(true);
+		CommandUtil.addCreateVoteOptions(commandData, true);
+		return commandData;
+	}
+
+	@Override
+	public void onButtonInteraction(ButtonInteractionEvent event) {
+		if (!handlesEvent(event)) {
+			return;
+		}
+
+		final String id = event.getComponentId();
+		if (isComponent(START_VOTE_BUTTON_PREFIX, id)) {
+			final long voteId = Long.parseUnsignedLong(getComponentDataFromId(START_VOTE_BUTTON_PREFIX, id));
+			bot.handleStartVote(voteId, event);
+		} else {
+			throw new IllegalStateException("Cant handle button " + id);
+		}
+	}
+
+	@Override
+	public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
+		if (!handlesCommand(event)) {
+			return;
+		}
+
+		final CreateVoteData createVoteData;
+		try {
+			final String title = event.getOption("title").getAsString();
+			final String description = event.getOption("description").getAsString();
+			final Duration duration = CommandUtil.parseDuration(event.getOption("duration"));
+			final Long votesPerUserLong = CommandUtil.parseLong(event.getOption("votes-per-user"), 1, 25);
+			final Integer votesPerUser = votesPerUserLong != null ? votesPerUserLong.intValue() : null;
+			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-vote"));
+			createVoteData = new CreateVoteData(title, description, duration, votesPerUser, usersCanChangeVotes);
+		} catch (OptionValueException e) {
+			event.reply(e.getMessage()).setEphemeral(true).queue();
+			return;
+		}
+
+		final String cacheId = addCacheObject(createVoteData);
+		final TextInput input = TextInput.create("VoteOptions", "Options", TextInputStyle.PARAGRAPH)
+				.setPlaceholder("One vote-option per line").setRequiredRange(1, 1000).setRequired(true).build();
+		final Modal modal = Modal.create(generateComponentId(START_VOTE_DIALOG_PREFIX, cacheId), "Vote-Options")
+				.addActionRow(input).build();
+		event.replyModal(modal).queue();
+	}
+
+	private static final Pattern NEWLINE_SPLIT_PATTERN = Pattern.compile("[\\r\\n]+");
+
+	@Override
+	public void onModalInteraction(final ModalInteractionEvent event) {
+		if (!handlesEvent(event)) {
+			return;
+		}
+
+		final String cacheId = getComponentDataFromId(START_VOTE_DIALOG_PREFIX, event.getModalId());
+		final CreateVoteData createVoteData = getCacheObject(cacheId);
+		if (createVoteData == null) {
+			event.reply("Your vote creation timed out. Please try again.").setEphemeral(true).queue();
+			return;
+		}
+
+		final ModalMapping modal = event.getInteraction().getValue("VoteOptions");
+		final String optionsStr = modal.getAsString();
+		final List<VoteOption> options = NEWLINE_SPLIT_PATTERN.splitAsStream(optionsStr)
+				.filter(option -> option != null && !option.isBlank()).map(VoteOption::new)
+				.collect(Collectors.toUnmodifiableList());
+
+		event.deferReply(false).complete();
+		final long messageId = event.getHook().retrieveOriginal().complete().getIdLong();
+
+		final Db db = Db.instance();
+		try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
+			VoteSettings settings = db.getDefaultSettings(lock);
+			settings = VoteSettings.getWithDefaults(createVoteData.duration, createVoteData.votesPerUser,
+					createVoteData.canChangeVote, settings);
+			final Vote vote = new Vote(settings, createVoteData.title, createVoteData.description, options);
+			event.getHook().sendMessage(CommandUtil.createVoteText(vote))
+					.addActionRow(Button.primary(
+							generateComponentId(START_VOTE_BUTTON_PREFIX, Long.toUnsignedString(messageId)), "Vote"))
+					.queue();
+			db.setVote(lock, messageId, vote);
+		}
+	}
+}
