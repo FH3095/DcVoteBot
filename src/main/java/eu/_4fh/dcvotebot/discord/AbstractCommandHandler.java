@@ -33,7 +33,7 @@ public abstract class AbstractCommandHandler<CacheObjectT> extends ListenerAdapt
 	protected final @CheckForNull String command;
 	protected final String idPrefix;
 
-	protected AbstractCommandHandler(final Bot bot, final String idPrefix, final String command) {
+	protected AbstractCommandHandler(final Bot bot, final String idPrefix, final @CheckForNull String command) {
 		Validate.notBlank(idPrefix);
 		Validate.inclusiveBetween(1, 29, idPrefix.length());
 		Validate.isTrue(!idPrefix.contains(ID_SEPERATOR), "idPrefix cant contain '" + ID_SEPERATOR + "'");
@@ -57,7 +57,7 @@ public abstract class AbstractCommandHandler<CacheObjectT> extends ListenerAdapt
 		return event.getModalId().startsWith(idPrefix);
 	}
 
-	protected abstract SlashCommandData createCommandData();
+	protected abstract @CheckForNull SlashCommandData createCommandData();
 
 	protected String addCacheObject(final CacheObjectT cacheObject) {
 		final String id = idPrefix + Integer.toUnsignedString(idGenerator.incrementAndGet());

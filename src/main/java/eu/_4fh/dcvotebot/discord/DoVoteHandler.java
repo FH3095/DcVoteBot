@@ -79,6 +79,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 			event.getHook()
 					.editOriginal("Saved your vote. It could take some minutes until the vote-message shows your vote.")
 					.setComponents(Collections.emptyList()).queue();
+			bot.handleVoted(event.getGuild().getIdLong(), data.voteId);
 		}
 	}
 

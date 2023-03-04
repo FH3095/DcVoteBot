@@ -64,7 +64,7 @@ public class VoteSettings {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(answersPerUser, canChangeAnswers, duration);
+		return Objects.hash(answersPerUser, canChangeAnswers, duration, timezoneId);
 	}
 
 	@Override
@@ -77,12 +77,12 @@ public class VoteSettings {
 		}
 		VoteSettings other = (VoteSettings) obj;
 		return answersPerUser == other.answersPerUser && canChangeAnswers == other.canChangeAnswers
-				&& Objects.equals(duration, other.duration);
+				&& Objects.equals(duration, other.duration) && Objects.equals(timezoneId, other.timezoneId);
 	}
 
 	@Override
 	public String toString() {
 		return "VoteSettings [answersPerUser=" + answersPerUser + ", duration=" + duration + ", canChangeAnswers="
-				+ canChangeAnswers + "]";
+				+ canChangeAnswers + ", timezoneId=" + timezoneId + "]";
 	}
 }
