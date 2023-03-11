@@ -2,6 +2,7 @@
 plugins {
 	eclipse
 	java
+	application
 }
 
 repositories {
@@ -17,6 +18,10 @@ java {
 	targetCompatibility = JavaVersion.VERSION_11
 }
 
+application {
+	mainClass.set("eu._4fh.dcvotebot.Main")
+}
+
 dependencies {
 	implementation("com.github.spotbugs:spotbugs-annotations:4.7.3")
 	implementation("com.github.ben-manes.caffeine:caffeine:3.1.4")
@@ -24,8 +29,6 @@ dependencies {
 
 	implementation("com.zaxxer:HikariCP:5.0.1")
 	implementation("org.mariadb.jdbc:mariadb-java-client:3.0.+")
-
-	implementation("org.json:json:20220924")
 
     implementation("net.dv8tion:JDA:5.0.+") {
         exclude("club.minnced", "opus-java")
