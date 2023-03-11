@@ -3,14 +3,15 @@ package eu._4fh.dcvotebot.discord;
 import java.time.Instant;
 import java.util.BitSet;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
-
-import org.apache.commons.lang3.Validate;
+import java.util.Set;
 
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import eu._4fh.dcvotebot.db.Db;
-import eu._4fh.dcvotebot.db.Db.LockHolder;
+import eu._4fh.dcvotebot.db.Db.NotFoundException;
+import eu._4fh.dcvotebot.db.Db.Transaction;
 import eu._4fh.dcvotebot.db.Vote;
 import eu._4fh.dcvotebot.db.VoteOption;
 import eu._4fh.dcvotebot.discord.DoVoteHandler.VoteData;
@@ -46,17 +47,15 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 
 	private void handleVote(Db db, ButtonInteractionEvent event, VoteData data, Vote vote) {
 		final long voterId = event.getUser().getIdLong();
-		vote = vote.copy();
+		final Set<Long> votersVotes = new HashSet<>();
 		boolean hasAlreadyVoted = false;
 		int votesSet = 0;
 		for (int i = 0; i < vote.options.size(); ++i) {
 			final VoteOption option = vote.options.get(i);
 			hasAlreadyVoted |= option.voters.contains(voterId);
 			if (data.votes.get(i)) {
-				vote.options.get(i).voters.add(voterId);
+				votersVotes.add(vote.options.get(i).id);
 				votesSet++;
-			} else {
-				vote.options.get(i).voters.remove(voterId);
 			}
 		}
 
@@ -73,18 +72,18 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 			event.getHook().editOriginal("You selected more than " + vote.settings.answersPerUser + " options.")
 					.setComponents(Collections.emptyList()).queue();
 		} else {
-			try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
-				db.setVote(lock, data.voteId, vote);
+			try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+				db.updateVoteVotes(trans, voterId, data.voteId, votersVotes);
 			}
 			event.getHook()
 					.editOriginal("Saved your vote. It could take some minutes until the vote-message shows your vote.")
 					.setComponents(Collections.emptyList()).queue();
-			bot.handleVoted(event.getGuild().getIdLong(), data.voteId);
+			bot.updateVoteText(event.getGuild().getIdLong(), data.voteId);
 		}
 	}
 
-	private void handleSendVoteButton(final String cacheId, final ButtonInteractionEvent event) {
-		final VoteData data = getCacheObject(cacheId);
+	private void handleSendVoteButton(final long userId, final ButtonInteractionEvent event) {
+		final VoteData data = getCacheObject(userId);
 		if (data == null) {
 			event.editMessage("Your vote timed out. Please dismiss this message and click vote again.")
 					.setComponents(Collections.emptyList()).queue();
@@ -93,9 +92,8 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 
 		event.deferEdit().queue();
 		final Db db = Db.instance();
-		try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
-			final Vote vote = db.getVote(lock, data.voteId);
-			Validate.notNull(vote);
+		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+			final Vote vote = db.getVote(trans, data.voteId);
 			handleVote(db, event, data, vote);
 		}
 	}
@@ -108,10 +106,9 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 
 		final String id = event.getComponentId();
 		if (isComponent(SEND_VOTE_BUTTON_PREFIX, id)) {
-			final String cacheId = getComponentDataFromId(SEND_VOTE_BUTTON_PREFIX, id);
-			handleSendVoteButton(cacheId, event);
+			handleSendVoteButton(event.getUser().getIdLong(), event);
 		} else {
-			throw new IllegalStateException("Cant handle button " + event.getComponentId());
+			throw new IllegalStateException("Cant handle button " + id);
 		}
 	}
 
@@ -121,8 +118,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 			return;
 		}
 
-		final String cacheId = getComponentDataFromId(SELECT_VOTES_PREFIX, event.getComponentId());
-		final VoteData data = getCacheObject(cacheId);
+		final VoteData data = getCacheObject(event.getUser().getIdLong());
 		if (data == null) {
 			event.editMessage("Sorry, something went wrong. Please try to vote again.")
 					.setComponents(Collections.emptyList()).queue();
@@ -137,25 +133,24 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 		event.deferEdit().queue();
 	}
 
-	/*package*/ void startVote(final long voteId, final ButtonInteractionEvent event) {
+	/*package*/ void startVote(final ButtonInteractionEvent event) {
 		event.deferReply(true).queue();
 
 		final Db db = Db.instance();
+		final long voteId = event.getMessageIdLong();
 		final Vote vote;
-		try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
-			vote = db.getVote(lock, voteId);
-		}
-		if (vote == null) {
+		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+			vote = db.getVote(trans, voteId);
+		} catch (NotFoundException e) {
 			event.getHook().sendMessage("This vote is already deleted from the bot.").queue();
 			return;
 		}
 
-		final VoteData data = new VoteData(voteId);
-		final String cacheId = addCacheObject(data);
 		final long voterId = event.getUser().getIdLong();
+		final VoteData data = new VoteData(voteId);
+		addCacheObject(voterId, data);
 		final List<VoteOption> options = vote.options;
-		final StringSelectMenu.Builder menuBuilder = StringSelectMenu
-				.create(generateComponentId(SELECT_VOTES_PREFIX, cacheId));
+		final StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(generateComponentId(SELECT_VOTES_PREFIX));
 		for (int i = 0; i < options.size(); ++i) {
 			final VoteOption option = options.get(i);
 			final SelectOption menuOption = SelectOption.of(option.name, Integer.toString(i))
@@ -164,7 +159,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 		}
 		menuBuilder.setMinValues(1).setMaxValues(vote.settings.answersPerUser);
 
-		final Button sendButton = Button.primary(generateComponentId(SEND_VOTE_BUTTON_PREFIX, cacheId), "Send vote");
+		final Button sendButton = Button.primary(generateComponentId(SEND_VOTE_BUTTON_PREFIX), "Send vote");
 
 		event.getHook().sendMessage("Select your vote").addActionRow(menuBuilder.build()).addActionRow(sendButton)
 				.queue();

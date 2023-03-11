@@ -6,7 +6,6 @@ import eu._4fh.dcvotebot.util.Config;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
-import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
@@ -14,20 +13,26 @@ import net.dv8tion.jda.api.utils.MemberCachePolicy;
 import net.dv8tion.jda.api.utils.cache.CacheFlag;
 
 @DefaultAnnotation(NonNull.class)
-public class Bot extends ListenerAdapter implements AutoCloseable {
+public class Bot implements AutoCloseable {
 	private final JDA jda;
+	private final int shardId;
 	private final DoVoteHandler doVoteHandler;
+	private final VoteUpdateHandler voteUpdateHandler;
 
 	public Bot(final int shardId, final int shardTotal) {
+		this.shardId = shardId;
+		voteUpdateHandler = new VoteUpdateHandler(this);
+
 		doVoteHandler = new DoVoteHandler(this);
 		final AbstractCommandHandler<?>[] commands = { new CreateVoteHandler(this), doVoteHandler,
-				new EditVoteHandler(this), new DeleteVoteHandler(this), new VoteSettingsDefaultCommand(this) };
+				new EditVoteHandler(this), new VoteSettingsDefaultCommand(this) };
 
 		final JDABuilder jdaBuilder = JDABuilder
 				.createDefault(Config.instance().discordToken, GatewayIntent.GUILD_MESSAGE_REACTIONS)
 				.disableCache(CacheFlag.VOICE_STATE, CacheFlag.EMOJI, CacheFlag.STICKER, CacheFlag.SCHEDULED_EVENTS)
 				.setAutoReconnect(true).setMemberCachePolicy(MemberCachePolicy.NONE)
-				.setChunkingFilter(ChunkingFilter.NONE).addEventListeners((Object[]) commands);
+				.setChunkingFilter(ChunkingFilter.NONE).addEventListeners((Object[]) commands)
+				.addEventListeners(voteUpdateHandler);
 		if (shardTotal > 1) {
 			jdaBuilder.useSharding(shardId, shardTotal);
 		}
@@ -38,6 +43,7 @@ public class Bot extends ListenerAdapter implements AutoCloseable {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		}
+		voteUpdateHandler.start();
 
 		if (shardId == 0) {
 			for (final AbstractCommandHandler<?> commandHandler : commands) {
@@ -51,6 +57,9 @@ public class Bot extends ListenerAdapter implements AutoCloseable {
 
 	@Override
 	public void close() {
+		if (voteUpdateHandler != null) {
+			voteUpdateHandler.close();
+		}
 		if (jda != null) {
 			jda.shutdown();
 			try {
@@ -62,12 +71,19 @@ public class Bot extends ListenerAdapter implements AutoCloseable {
 		}
 	}
 
-	/*package*/ void handleStartVote(final long voteId, ButtonInteractionEvent event) {
-		doVoteHandler.startVote(voteId, event);
+	/*package*/ void updateMessage(final long serverId, final long channelId, final long messageId, final String text) {
+		jda.getGuildById(serverId).getTextChannelById(channelId).editMessageById(messageId, text).complete();
 	}
 
-	/*package*/ void handleVoted(long serverId, long voteId) {
-		// TODO Auto-generated method stub
+	public long getShardId() {
+		return shardId;
+	}
 
+	/*package*/ void handleStartVote(ButtonInteractionEvent event) {
+		doVoteHandler.startVote(event);
+	}
+
+	/*package*/ void updateVoteText(long serverId, long voteId) {
+		voteUpdateHandler.addToUpdateVote(serverId, voteId);
 	}
 }

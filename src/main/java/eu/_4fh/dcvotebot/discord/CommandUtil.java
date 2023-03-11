@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import eu._4fh.dcvotebot.db.Db;
-import eu._4fh.dcvotebot.db.Db.LockHolder;
+import eu._4fh.dcvotebot.db.Db.Transaction;
 import eu._4fh.dcvotebot.db.Vote;
 import eu._4fh.dcvotebot.db.VoteOption;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
@@ -74,8 +74,10 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 		final int bulletCode = 0x2022;
 		final int arrowCode = 0x2192;
 		final Set<Long> voters = new HashSet<>();
-		final long votes = vote.options.stream().peek(option -> voters.addAll(option.voters))
-				.collect(Collectors.summingLong(option -> option.voters.size()));
+		final long votes = vote.options.stream().filter(option -> {
+			voters.addAll(option.voters);
+			return true;
+		}).collect(Collectors.summingLong(option -> option.voters.size()));
 
 		result.append("**").append(vote.title).append("**\n\n").append(vote.description).append("\n\n");
 
@@ -117,7 +119,7 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 				result.append(" 0 /   0%");
 			} else {
 				numberFormatter.format("%3d / %3d%%", option.voters.size(),
-						Math.round((double) option.voters.size() / (double) votes));
+						Math.round((double) option.voters.size() / (double) votes * 100d));
 			}
 			result.append("\n");
 		}
@@ -161,7 +163,7 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 		return result;
 	}
 
-	/*package*/ static @CheckForNull Long parseLong(final OptionMapping option, long minValue, long maxValue)
+	/*package*/ static @CheckForNull Byte parseByte(final OptionMapping option, byte minValue, byte maxValue)
 			throws OptionValueException {
 		if (option == null) {
 			return null;
@@ -172,7 +174,7 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 			throw new OptionValueException(
 					"Option " + option.getName() + " is either less than " + minValue + " or more than " + maxValue);
 		}
-		return value;
+		return (byte) value;
 	}
 
 	/*package*/ static @CheckForNull Boolean parseBoolean(final OptionMapping option) {
@@ -184,11 +186,11 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 
 	/*package*/ static void autoCompleteVotes(CommandAutoCompleteInteractionEvent event) {
 		final Db db = Db.instance();
-		try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
-			final Collection<Long> allVoteIds = db.getAllServerVoteIds(lock);
+		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+			final Collection<Long> allVoteIds = db.getAllServerVoteIds(trans);
 			final List<Command.Choice> allChoices = new ArrayList<>(allVoteIds.size());
 			allVoteIds.stream()
-					.forEach(voteId -> allChoices.add(new Command.Choice(db.getVote(lock, voteId).title, voteId)));
+					.forEach(voteId -> allChoices.add(new Command.Choice(db.getVote(trans, voteId).title, voteId)));
 			event.replyChoices(allChoices).queue();
 		}
 	}

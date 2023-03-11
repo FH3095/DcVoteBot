@@ -6,3 +6,5 @@ discord.shards=1
 discord.token=abcdef
 
 interaction.timeoutMinutes=15
+
+updateVoteMessages.intervall=500

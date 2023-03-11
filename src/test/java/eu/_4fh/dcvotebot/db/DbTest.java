@@ -1,233 +1,162 @@
 package eu._4fh.dcvotebot.db;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.time.Instant;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.List;
+import java.util.Set;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
-import eu._4fh.dcvotebot.db.Db.LockHolder;
-import eu._4fh.dcvotebot.util.Config;
-import eu._4fh.dcvotebot.util.TryAgainLaterException;
+import eu._4fh.dcvotebot.db.Db.NotFoundException;
+import eu._4fh.dcvotebot.db.Db.Transaction;
 
 class DbTest {
 	private Db db;
 
 	@BeforeEach
 	void before() {
-		db = Db.instance();
-	}
-
-	@AfterEach
-	void after() throws IOException {
-		Files.walk(Config.instance().dbDataDir).filter(p -> Files.isRegularFile(p)).forEach(f -> {
-			try {
-				Files.delete(f);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		});
-	}
-
-	@Test
-	@Timeout(value = 90, unit = TimeUnit.SECONDS)
-	void testLockDifferentServers() throws InterruptedException, ExecutionException {
-		final Consumer<Long> lockTask = serverId -> {
-			try (final LockHolder lock = db.getLock(serverId)) {
-				TimeUnit.SECONDS.sleep(Config.instance().dbLockWaitSeconds * 3);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new RuntimeException(e);
-			}
-		};
-		final Runnable r1 = () -> lockTask.accept(1L);
-		final Runnable r2 = () -> lockTask.accept(2L);
-
-		final ExecutorService es = Executors.newFixedThreadPool(2);
-		final Future<?> t1 = es.submit(r1);
-		final Future<?> t2 = es.submit(r2);
-		assertThatNoException().isThrownBy(t1::get);
-		assertThatNoException().isThrownBy(t2::get);
-		es.shutdown();
-	}
-
-	@Test
-	@Timeout(value = 90, unit = TimeUnit.SECONDS)
-	void testLockSameServerWithException() throws InterruptedException {
-		final Consumer<Long> lockTask = serverId -> {
-			try (final LockHolder lock = db.getLock(serverId)) {
-				TimeUnit.SECONDS.sleep(Config.instance().dbLockWaitSeconds * 3);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new RuntimeException(e);
-			}
-		};
-		final Runnable r1 = () -> lockTask.accept(1L);
-		final Runnable r2 = () -> lockTask.accept(1L);
-
-		final ExecutorService es = Executors.newFixedThreadPool(2);
-		final Future<?> t1 = es.submit(r1);
-		final Future<?> t2 = es.submit(r2);
-		ExecutionException exception = null;
-		try {
-			t1.get();
-		} catch (ExecutionException e) {
-			exception = e;
-		}
-		try {
-			t2.get();
-		} catch (ExecutionException e) {
-			assertThat(exception).isNull();
-			exception = e;
-		}
-		es.shutdown();
-		assertThat(exception).isNotNull().cause().isInstanceOf(TryAgainLaterException.class);
-	}
-
-	@Test
-	@Timeout(value = 90, unit = TimeUnit.SECONDS)
-	void testLockSameServerWithoutException() throws InterruptedException, ExecutionException {
-		final Consumer<Long> lockTask = serverId -> {
-			try (final LockHolder lock = db.getLock(serverId)) {
-				TimeUnit.SECONDS.sleep(1);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new RuntimeException(e);
-			}
-		};
-		final Runnable r1 = () -> lockTask.accept(1L);
-		final Runnable r2 = () -> lockTask.accept(1L);
-
-		final Instant start = Instant.now();
-		final ExecutorService es = Executors.newFixedThreadPool(2);
-		final Future<?> t1 = es.submit(r1);
-		final Future<?> t2 = es.submit(r2);
-		assertThatNoException().isThrownBy(t1::get);
-		assertThatNoException().isThrownBy(t2::get);
-		es.shutdown();
-		final Instant endMinus2Seconds = Instant.now().minusSeconds(2);
-		assertThat(endMinus2Seconds).as("end minus 2 seconds must be greater or equal to start")
-				.isAfterOrEqualTo(start);
+		db = Db.forTestNewDb();
 	}
 
 	@Test
 	void readWriteReadSettings() {
 		VoteSettings settings;
-		try (LockHolder lock = db.getLock(1)) {
-			settings = db.getDefaultSettings(lock);
+		try (Transaction trans = db.getTransaction(1)) {
+			settings = db.getDefaultSettings(trans);
 		}
 		assertThat(settings).isEqualTo(VoteSettings.getDefault());
 		final VoteSettings newSettings = new VoteSettings(settings.answersPerUser, settings.duration.getSeconds(),
-				!settings.canChangeAnswers, "UTC");
-		try (LockHolder lock = db.getLock(1)) {
-			db.setDefaultSettings(lock, newSettings);
+				!settings.canChangeAnswers, "Europe/Berlin");
+		try (Transaction trans = db.getTransaction(1)) {
+			db.setDefaultSettings(trans, newSettings);
 		}
-		try (LockHolder lock = db.getLock(1)) {
-			settings = db.getDefaultSettings(lock);
+		try (Transaction trans = db.getTransaction(1)) {
+			settings = db.getDefaultSettings(trans);
 		}
 		assertThat(settings).isEqualTo(newSettings);
 		db.forTestResetCaches();
-		try (LockHolder lock = db.getLock(1)) {
-			settings = db.getDefaultSettings(lock);
+		try (Transaction trans = db.getTransaction(1)) {
+			settings = db.getDefaultSettings(trans);
 		}
 		assertThat(settings).isEqualTo(newSettings);
 	}
 
 	@Test
 	void readVoteDifferentServerFails() {
-		final Vote vote = new Vote(VoteSettings.getDefault(), "Title", "desc",
-				Collections.singletonList(new VoteOption("Opt1")));
-		try (LockHolder lock = db.getLock(1)) {
-			db.setVote(lock, 1, vote);
+		final Vote vote = Vote.create(VoteSettings.getDefault(), 1, "Title", "desc",
+				Collections.singletonList(VoteOption.create("Opt1")));
+		try (Transaction trans = db.getTransaction(1)) {
+			db.insertVote(trans, 1, vote);
 		}
-		try (LockHolder lock = db.getLock(2)) {
-			assertThatThrownBy(() -> db.getVote(lock, 1)).isInstanceOf(CompletionException.class);
+		try (Transaction trans = db.getTransaction(2)) {
+			assertThatThrownBy(() -> db.getVote(trans, 1)).isInstanceOf(NotFoundException.class);
 		}
 	}
 
 	@Test
 	void readWriteReadVote() {
-		final VoteOption opt1 = new VoteOption("Opt1");
-		final VoteOption opt2 = new VoteOption("Opt2");
-		opt1.voters.add(1L);
-		opt2.voters.add(2L);
-		opt2.voters.add(3L);
-		final Vote newVote = new Vote(VoteSettings.getDefault(), "Title", "Desc", Arrays.asList(opt1, opt2));
+		final VoteOption opt1 = VoteOption.create("Opt1");
+		final VoteOption opt2 = VoteOption.create("Opt2");
+		final Vote newVote = Vote.create(VoteSettings.getDefault(), 100, "Title", "Desc", Arrays.asList(opt1, opt2));
 
-		try (LockHolder lock = db.getLock(1L)) {
-			db.setVote(lock, 1L, newVote);
+		try (Transaction trans = db.getTransaction(1L)) {
+			db.insertVote(trans, 1L, newVote);
 		}
 
 		Vote vote;
-		try (LockHolder lock = db.getLock(1L)) {
-			vote = db.getVote(lock, 1L);
+		try (Transaction trans = db.getTransaction(1L)) {
+			vote = db.getVote(trans, 1L);
 		}
-		assertThat(vote).isEqualTo(newVote);
+		assertThat(vote.title).isEqualTo(newVote.title);
+		assertThat(vote.description).isEqualTo(newVote.description);
+		assertThat(vote.settings).isEqualTo(newVote.settings);
+		assertThat(vote.options).map(o -> o.name).containsExactly("Opt1", "Opt2");
+
 		db.forTestResetCaches();
-		try (LockHolder lock = db.getLock(1L)) {
-			vote = db.getVote(lock, 1L);
+		try (Transaction trans = db.getTransaction(1L)) {
+			vote = db.getVote(trans, 1L);
 		}
-		assertThat(vote).isEqualTo(newVote);
+		assertThat(vote.title).isEqualTo(newVote.title);
+		assertThat(vote.description).isEqualTo(newVote.description);
+		assertThat(vote.settings).isEqualTo(newVote.settings);
+		assertThat(vote.options).map(o -> o.name).containsExactly("Opt1", "Opt2");
 	}
 
 	@Test
-	void testChangeVote() {
-		Vote vote = new Vote(VoteSettings.getDefault(), "Title", "Desc",
-				Collections.singletonList(new VoteOption("Opt1")));
-		try (LockHolder lock = db.getLock(1)) {
-			db.setVote(lock, 1, vote);
-		}
-		try (LockHolder lock = db.getLock(1)) {
-			vote = db.getVote(lock, 1);
-		}
-		assertThat(vote.options.get(0).voters).isEmpty();
-		vote.options.get(0).voters.add(1L);
-		try (LockHolder lock = db.getLock(1)) {
-			db.setVote(lock, 1, vote);
+	void testDoVote() {
+		Vote vote = Vote.create(VoteSettings.getDefault(), 100, "Title", "Desc",
+				Arrays.asList(VoteOption.create("Opt1"), VoteOption.create("Opt2"), VoteOption.create("Opt3")));
+
+		try (Transaction trans = db.getTransaction(1L)) {
+			db.insertVote(trans, 1L, vote);
+			vote = db.getVote(trans, 1L);
 		}
 
-		try (LockHolder lock = db.getLock(1)) {
-			vote = db.getVote(lock, 1);
+		try (Transaction trans = db.getTransaction(1L)) {
+			db.updateVoteVotes(trans, 2L, 1L, Set.of(vote.options.get(0).id, vote.options.get(2).id));
 		}
-		assertThat(vote.options.get(0).voters).containsExactlyInAnyOrder(1L);
+		try (Transaction trans = db.getTransaction(1L)) {
+			vote = db.getVote(trans, 1L);
+		}
+		assertThat(vote.options).hasSize(3);
+		assertThat(vote.options).map(option -> option.voters).containsExactly(Set.of(2L), Set.of(), Set.of(2L));
 		db.forTestResetCaches();
-		try (LockHolder lock = db.getLock(1)) {
-			vote = db.getVote(lock, 1);
+		try (Transaction trans = db.getTransaction(1L)) {
+			vote = db.getVote(trans, 1L);
 		}
-		assertThat(vote.options.get(0).voters).containsExactlyInAnyOrder(1L);
+		assertThat(vote.options).hasSize(3);
+		assertThat(vote.options).map(option -> option.voters).containsExactly(Set.of(2L), Set.of(), Set.of(2L));
+	}
+
+	@Test
+	void testUpdateVote() {
+		Vote vote = Vote.create(VoteSettings.getDefault(), 1L, "Title", "Desc", List.of(VoteOption.create("Opt1")));
+		try (Transaction trans = db.getTransaction(1)) {
+			db.insertVote(trans, 1, vote);
+		}
+		try (Transaction trans = db.getTransaction(1)) {
+			vote = db.getVote(trans, 1);
+		}
+
+		vote = Vote.createWithDefaults(
+				VoteSettings.createWithDefaults(Duration.ofDays(5), (byte) 2, true, vote.settings), "Title2", "Desc2",
+				vote);
+		Vote voteFromDb;
+		try (Transaction trans = db.getTransaction(1)) {
+			db.updateVote(trans, 1, vote);
+			voteFromDb = db.getVote(trans, 1);
+		}
+		assertThat(voteFromDb.title).isEqualTo("Title2");
+		assertThat(voteFromDb).isEqualTo(vote);
+
+		db.forTestResetCaches();
+		try (Transaction trans = db.getTransaction(1)) {
+			voteFromDb = db.getVote(trans, 1);
+		}
+		assertThat(voteFromDb.title).isEqualTo("Title2");
+		assertThat(voteFromDb).isEqualTo(vote);
 	}
 
 	@Test
 	void testGetAllServerVotes() {
-		try (LockHolder lock = db.getLock(1)) {
-			final Vote vote = new Vote(VoteSettings.getDefault(), "Title", "Desc",
-					Collections.singletonList(new VoteOption("Opt")));
-			db.setVote(lock, Long.MAX_VALUE, vote);
-			db.setVote(lock, Long.MIN_VALUE, vote);
-			db.setVote(lock, -1, vote);
+		try (Transaction trans = db.getTransaction(1)) {
+			final Vote vote = Vote.create(VoteSettings.getDefault(), 1L, "Title", "Desc",
+					List.of(VoteOption.create("Opt")));
+			db.insertVote(trans, Long.MAX_VALUE, vote);
+			db.insertVote(trans, Long.MIN_VALUE, vote);
+			db.insertVote(trans, -1, vote);
 		}
 
-		try (LockHolder lock = db.getLock(2)) {
-			assertThat(db.getAllServerVoteIds(lock)).isEmpty();
+		try (Transaction trans = db.getTransaction(2)) {
+			assertThat(db.getAllServerVoteIds(trans)).isEmpty();
 		}
-		try (LockHolder lock = db.getLock(1)) {
-			assertThat(db.getAllServerVoteIds(lock)).containsExactlyInAnyOrder(-1L, Long.MAX_VALUE, Long.MIN_VALUE);
+		try (Transaction trans = db.getTransaction(1)) {
+			assertThat(db.getAllServerVoteIds(trans)).containsExactlyInAnyOrder(-1L, Long.MAX_VALUE, Long.MIN_VALUE);
 		}
 	}
 }

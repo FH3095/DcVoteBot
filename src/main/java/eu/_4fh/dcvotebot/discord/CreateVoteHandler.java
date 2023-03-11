@@ -10,7 +10,7 @@ import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import eu._4fh.dcvotebot.db.Db;
-import eu._4fh.dcvotebot.db.Db.LockHolder;
+import eu._4fh.dcvotebot.db.Db.Transaction;
 import eu._4fh.dcvotebot.db.Vote;
 import eu._4fh.dcvotebot.db.VoteOption;
 import eu._4fh.dcvotebot.db.VoteSettings;
@@ -33,11 +33,11 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 		private final String title;
 		private final String description;
 		private final @CheckForNull Duration duration;
-		private final @CheckForNull Integer votesPerUser;
+		private final @CheckForNull Byte votesPerUser;
 		private final @CheckForNull Boolean canChangeVote;
 
 		private CreateVoteData(final String title, final String description, final @CheckForNull Duration duration,
-				final @CheckForNull Integer votesPerUser, final @CheckForNull Boolean canChangeVote) {
+				final @CheckForNull Byte votesPerUser, final @CheckForNull Boolean canChangeVote) {
 			this.title = title;
 			this.description = description;
 			this.duration = duration;
@@ -46,8 +46,8 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 		}
 	}
 
-	private static final String START_VOTE_BUTTON_PREFIX = "voteBtn";
-	private static final String START_VOTE_DIALOG_PREFIX = "startVoteDialog";
+	/*package for test*/ static final String START_VOTE_BUTTON_PREFIX = "voteBtn";
+	/*package for test*/ static final String START_VOTE_DIALOG_PREFIX = "voteOptsDlg";
 
 	/*package*/ CreateVoteHandler(final Bot bot) {
 		super(bot, "cr-vo", "create-vote");
@@ -69,8 +69,7 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 
 		final String id = event.getComponentId();
 		if (isComponent(START_VOTE_BUTTON_PREFIX, id)) {
-			final long voteId = Long.parseUnsignedLong(getComponentDataFromId(START_VOTE_BUTTON_PREFIX, id));
-			bot.handleStartVote(voteId, event);
+			bot.handleStartVote(event);
 		} else {
 			throw new IllegalStateException("Cant handle button " + id);
 		}
@@ -87,8 +86,7 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 			final String title = event.getOption("title").getAsString();
 			final String description = event.getOption("description").getAsString();
 			final Duration duration = CommandUtil.parseDuration(event.getOption("duration"));
-			final Long votesPerUserLong = CommandUtil.parseLong(event.getOption("votes-per-user"), 1, 25);
-			final Integer votesPerUser = votesPerUserLong != null ? votesPerUserLong.intValue() : null;
+			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("votes-per-user"), (byte) 1, (byte) 25);
 			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-vote"));
 			createVoteData = new CreateVoteData(title, description, duration, votesPerUser, usersCanChangeVotes);
 		} catch (OptionValueException e) {
@@ -96,10 +94,10 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 			return;
 		}
 
-		final String cacheId = addCacheObject(createVoteData);
+		addCacheObject(event.getUser().getIdLong(), createVoteData);
 		final TextInput input = TextInput.create("VoteOptions", "Options", TextInputStyle.PARAGRAPH)
 				.setPlaceholder("One vote-option per line").setRequiredRange(1, 1000).setRequired(true).build();
-		final Modal modal = Modal.create(generateComponentId(START_VOTE_DIALOG_PREFIX, cacheId), "Vote-Options")
+		final Modal modal = Modal.create(generateComponentId(START_VOTE_DIALOG_PREFIX), "Vote-Options")
 				.addActionRow(input).build();
 		event.replyModal(modal).queue();
 	}
@@ -112,8 +110,7 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 			return;
 		}
 
-		final String cacheId = getComponentDataFromId(START_VOTE_DIALOG_PREFIX, event.getModalId());
-		final CreateVoteData createVoteData = getCacheObject(cacheId);
+		final CreateVoteData createVoteData = getCacheObject(event.getUser().getIdLong());
 		if (createVoteData == null) {
 			event.reply("Your vote creation timed out. Please try again.").setEphemeral(true).queue();
 			return;
@@ -122,23 +119,22 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 		final ModalMapping modal = event.getInteraction().getValue("VoteOptions");
 		final String optionsStr = modal.getAsString();
 		final List<VoteOption> options = NEWLINE_SPLIT_PATTERN.splitAsStream(optionsStr)
-				.filter(option -> option != null && !option.isBlank()).map(VoteOption::new)
+				.filter(option -> option != null && !option.isBlank()).map(VoteOption::create)
 				.collect(Collectors.toUnmodifiableList());
 
 		event.deferReply(false).complete();
 		final long messageId = event.getHook().retrieveOriginal().complete().getIdLong();
 
 		final Db db = Db.instance();
-		try (LockHolder lock = db.getLock(event.getGuild().getIdLong())) {
-			VoteSettings settings = db.getDefaultSettings(lock);
-			settings = VoteSettings.getWithDefaults(createVoteData.duration, createVoteData.votesPerUser,
+		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+			VoteSettings settings = db.getDefaultSettings(trans);
+			settings = VoteSettings.createWithDefaults(createVoteData.duration, createVoteData.votesPerUser,
 					createVoteData.canChangeVote, settings);
-			final Vote vote = new Vote(settings, createVoteData.title, createVoteData.description, options);
+			final Vote vote = Vote.create(settings, event.getChannel().getIdLong(), createVoteData.title,
+					createVoteData.description, options);
 			event.getHook().sendMessage(CommandUtil.createVoteText(vote))
-					.addActionRow(Button.primary(
-							generateComponentId(START_VOTE_BUTTON_PREFIX, Long.toUnsignedString(messageId)), "Vote"))
-					.queue();
-			db.setVote(lock, messageId, vote);
+					.addActionRow(Button.primary(generateComponentId(START_VOTE_BUTTON_PREFIX), "Vote")).queue();
+			db.insertVote(trans, messageId, vote);
 		}
 	}
 }
