@@ -1,5 +1,7 @@
 package eu._4fh.dcvotebot.discord;
 
+import java.util.Collections;
+
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import eu._4fh.dcvotebot.util.Config;
@@ -7,10 +9,8 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
-import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
-import net.dv8tion.jda.api.utils.cache.CacheFlag;
 
 @DefaultAnnotation(NonNull.class)
 public class Bot implements AutoCloseable {
@@ -27,9 +27,7 @@ public class Bot implements AutoCloseable {
 		final AbstractCommandHandler<?>[] commands = { new CreateVoteHandler(this), doVoteHandler,
 				new EditVoteHandler(this), new VoteSettingsDefaultCommand(this) };
 
-		final JDABuilder jdaBuilder = JDABuilder
-				.createDefault(Config.instance().discordToken, GatewayIntent.GUILD_MESSAGE_REACTIONS)
-				.disableCache(CacheFlag.VOICE_STATE, CacheFlag.EMOJI, CacheFlag.STICKER, CacheFlag.SCHEDULED_EVENTS)
+		final JDABuilder jdaBuilder = JDABuilder.createLight(Config.instance().discordToken, Collections.emptyList())
 				.setAutoReconnect(true).setMemberCachePolicy(MemberCachePolicy.NONE)
 				.setChunkingFilter(ChunkingFilter.NONE).addEventListeners((Object[]) commands)
 				.addEventListeners(voteUpdateHandler);

@@ -39,16 +39,16 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 	}
 
 	/*package*/ static void addCreateVoteOptions(final SlashCommandData commandData, final boolean createVote) {
-		addOption(commandData, "title", "Title for your vote", createVote, 100);
+		addOption(commandData, "title", "Title for your poll", createVote, 100);
 		addOption(commandData, "description", "Description", createVote, 1000);
 		addVoteSettingsOptions(commandData, false);
 	}
 
 	/*package*/ static void addVoteSettingsOptions(final SlashCommandData commandData, final boolean allRequired) {
-		addOption(commandData, "duration", "Duration for your vote. Format like 1d 2h 3m", allRequired, 16);
-		addBoolOption(commandData, "users-can-change-vote", "If a user can change the vote.", allRequired);
-		commandData.addOptions(new OptionData(OptionType.INTEGER, "votes-per-user",
-				"How many votes a single user can vote for", allRequired).setMinValue(1).setMaxValue(25));
+		addOption(commandData, "duration", "Duration for your poll. Format like 1d 2h 3m", allRequired, 16);
+		addBoolOption(commandData, "users-can-change-answer", "If a user can change his/her answer.", allRequired);
+		commandData.addOptions(new OptionData(OptionType.INTEGER, "answers-per-user",
+				"How many answers a single user can vote for", allRequired).setMinValue(1).setMaxValue(25));
 	}
 
 	private static void addOption(final SlashCommandData commandData, final String title, final String description,
@@ -90,40 +90,42 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 		result.appendCodePoint(bulletCode).append(" ");
 		numberFormatter.format("%2d", vote.settings.answersPerUser);
 		if (vote.settings.answersPerUser > 1) {
-			result.append(" Votes ");
+			result.append(" Answers ");
 		} else {
-			result.append(" Vote ");
+			result.append(" Answer ");
 		}
-		result.append("per Voter\n");
+		result.append("per User\n");
 
 		result.appendCodePoint(bulletCode).append(" You can ");
 		if (!vote.settings.canChangeAnswers) {
 			result.append("*not* ");
 		}
-		result.append("change your vote\n");
+		result.append("change your answer\n");
 
 		result.appendCodePoint(bulletCode).append(" ");
 		numberFormatter.format("%4d", voters.size());
-		result.append(" Voters\n");
+		result.append(" Users\n");
 
 		result.append("\n");
 
 		result.append("```");
 		for (int i = 0; i < vote.options.size(); ++i) {
+			if (i > 0) {
+				result.append("\n");
+			}
+
 			final VoteOption option = vote.options.get(i);
 			numberFormatter.format("%2d", i + 1);
 			result.append(". ");
 			result.append(option.name);
 			result.append(" ").appendCodePoint(arrowCode).append(" ");
 			if (option.voters.isEmpty()) {
-				result.append(" 0 /   0%");
+				result.append("  0 /   0%");
 			} else {
 				numberFormatter.format("%3d / %3d%%", option.voters.size(),
 						Math.round((double) option.voters.size() / (double) votes * 100d));
 			}
-			result.append("\n");
 		}
-		result.setLength(result.length() - 1);
 		result.append("```");
 
 		return result.toString();

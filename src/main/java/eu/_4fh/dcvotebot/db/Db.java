@@ -74,6 +74,10 @@ public class Db {
 			if (con != null) {
 				try {
 					con.rollback();
+				} catch (SQLException e) {
+					Log.getLog(this).log(Level.SEVERE, "Cant rollback jdbc transaction", e);
+				}
+				try {
 					con.close();
 				} catch (SQLException e) {
 					Log.getLog(this).log(Level.SEVERE, "Cant close jdbc connection", e);
@@ -98,7 +102,15 @@ public class Db {
 		final HikariConfig config = new HikariConfig();
 		hikariDs.copyStateTo(config);
 		config.setJdbcUrl(config.getJdbcUrl().replace("testdb", "testdb" + testDbCounter++));
-		instance = new Db(new HikariDataSource(config));
+		final HikariDataSource ds = new HikariDataSource(config);
+		// Init Database
+		try (final Connection con = ds.getConnection(); final Statement stmt = con.createStatement()) {
+			stmt.execute("RUNSCRIPT FROM 'create_db.sql'");
+		} catch (SQLException e) {
+			ds.close();
+			throw new RuntimeException(e);
+		}
+		instance = new Db(ds);
 		return instance;
 	}
 
@@ -117,12 +129,12 @@ public class Db {
 
 	private <K, V> Cache<K, V> buildCache() {
 		return Caffeine.newBuilder().expireAfterWrite(Duration.ofDays(1)).softValues()
-				.scheduler(Scheduler.systemScheduler()).maximumSize(1_000_000).build();
+				.scheduler(Scheduler.systemScheduler()).build();
 	}
 
 	private <T> T logAndThrow(final String msg, final SQLException e) {
 		Log.getLog(this).log(Level.SEVERE, msg, e);
-		throw new IllegalStateException(e);
+		throw new IllegalStateException(msg, e);
 	}
 
 	private VoteSettings loadDefaultSettings(final Transaction trans) {
@@ -261,7 +273,7 @@ public class Db {
 		Validate.isTrue(voteMsgId != 0);
 
 		try (PreparedStatement stmt = trans.con.prepareStatement(
-				"UPDATE votes SET title = ?, description = ?, votesPerVoter = ?, durationSeconds = ?, voterCanChangeVotes = ? WHERE messageId = ?")) {
+				"UPDATE votes SET title = ?, description = ?, votesPerVoter = ?, durationSeconds = ?, voterCanChangeVotes = ?, lastEditMade = 0 WHERE messageId = ?")) {
 			stmt.setString(1, vote.title);
 			stmt.setString(2, vote.description);
 			stmt.setByte(3, vote.settings.answersPerUser);
@@ -315,6 +327,40 @@ public class Db {
 		}
 	}
 
+	public Collection<Pair<Long, Long>> getVotesToLastUpdate(final long timestamp) {
+		try (Connection con = dataSource.getConnection();
+				PreparedStatement stmt = con.prepareStatement(
+						"SELECT serverId, messageId FROM votes WHERE lastEditMade = 0 AND start + durationSeconds < ?")) {
+			stmt.setLong(1, timestamp);
+			try (ResultSet rs = stmt.executeQuery()) {
+				final List<Pair<Long, Long>> result = new ArrayList<>();
+				while (rs.next()) {
+					result.add(Pair.of(rs.getLong(1), rs.getLong(2)));
+				}
+				con.rollback();
+				return result;
+			}
+		} catch (SQLException e) {
+			return logAndThrow("Cant fetch to last edit votes", e);
+		}
+	}
+
+	public void markVotesAsLastUpdated(final Collection<Pair<Long, Long>> votes) {
+		try (Connection con = dataSource.getConnection();
+				PreparedStatement stmt = con
+						.prepareStatement("UPDATE votes SET lastEditMade = 1 WHERE serverId = ? AND messageId = ?")) {
+			for (Pair<Long, Long> vote : votes) {
+				stmt.setLong(1, vote.getLeft());
+				stmt.setLong(2, vote.getRight());
+				stmt.addBatch();
+			}
+			stmt.executeBatch();
+			con.commit();
+		} catch (SQLException e) {
+			logAndThrow("Cant mark votes as last edited", e);
+		}
+	}
+
 	public void saveToUpdateVotes(final Collection<Long> messageIds) {
 		try (Connection con = dataSource.getConnection();
 				PreparedStatement stmt = con.prepareStatement("INSERT INTO to_update_votes(messageId) VALUES (?)")) {
@@ -338,9 +384,22 @@ public class Db {
 			while (rs.next()) {
 				result.add(Pair.of(rs.getLong(1), rs.getLong(2)));
 			}
+			con.rollback();
 			return result;
 		} catch (SQLException e) {
 			return logAndThrow("Cant load to update votes", e);
+		}
+	}
+
+	public int deleteOldVotes(final long deleteBefore) {
+		try (Connection con = dataSource.getConnection();
+				PreparedStatement stmt = con.prepareStatement("DELETE FROM votes WHERE start + durationSeconds < ?")) {
+			stmt.setLong(1, deleteBefore);
+			final int deletedVotes = stmt.executeUpdate();
+			con.commit();
+			return deletedVotes;
+		} catch (SQLException e) {
+			return logAndThrow("Cant delete old votes", e);
 		}
 	}
 

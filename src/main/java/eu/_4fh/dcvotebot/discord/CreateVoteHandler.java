@@ -16,9 +16,11 @@ import eu._4fh.dcvotebot.db.VoteOption;
 import eu._4fh.dcvotebot.db.VoteSettings;
 import eu._4fh.dcvotebot.discord.CommandUtil.OptionValueException;
 import eu._4fh.dcvotebot.discord.CreateVoteHandler.CreateVoteData;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
@@ -46,18 +48,19 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 		}
 	}
 
-	/*package for test*/ static final String START_VOTE_BUTTON_PREFIX = "voteBtn";
-	/*package for test*/ static final String START_VOTE_DIALOG_PREFIX = "voteOptsDlg";
+	/*package for test*/ static final String START_VOTE_BUTTON_PREFIX = "pollBtn";
+	/*package for test*/ static final String START_VOTE_DIALOG_PREFIX = "pollOptsDlg";
 
 	/*package*/ CreateVoteHandler(final Bot bot) {
-		super(bot, "cr-vo", "create-vote");
+		super(bot, "cr-po", "create-poll");
 	}
 
 	@Override
 	@SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF", justification = "False-positive")
 	protected SlashCommandData createCommandData() {
-		SlashCommandData commandData = Commands.slash(command, "Creates a new vote").setGuildOnly(true);
+		SlashCommandData commandData = Commands.slash(command, "Creates a new poll").setGuildOnly(true);
 		CommandUtil.addCreateVoteOptions(commandData, true);
+		commandData.setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MESSAGE_SEND));
 		return commandData;
 	}
 
@@ -86,8 +89,8 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 			final String title = event.getOption("title").getAsString();
 			final String description = event.getOption("description").getAsString();
 			final Duration duration = CommandUtil.parseDuration(event.getOption("duration"));
-			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("votes-per-user"), (byte) 1, (byte) 25);
-			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-vote"));
+			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("answers-per-user"), (byte) 1, (byte) 25);
+			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-answer"));
 			createVoteData = new CreateVoteData(title, description, duration, votesPerUser, usersCanChangeVotes);
 		} catch (OptionValueException e) {
 			event.reply(e.getMessage()).setEphemeral(true).queue();
@@ -95,9 +98,9 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 		}
 
 		addCacheObject(event.getUser().getIdLong(), createVoteData);
-		final TextInput input = TextInput.create("VoteOptions", "Options", TextInputStyle.PARAGRAPH)
-				.setPlaceholder("One vote-option per line").setRequiredRange(1, 1000).setRequired(true).build();
-		final Modal modal = Modal.create(generateComponentId(START_VOTE_DIALOG_PREFIX), "Vote-Options")
+		final TextInput input = TextInput.create("PollOptions", "Options", TextInputStyle.PARAGRAPH)
+				.setPlaceholder("One poll-answer per line").setRequiredRange(1, 1000).setRequired(true).build();
+		final Modal modal = Modal.create(generateComponentId(START_VOTE_DIALOG_PREFIX), "Poll-Answers")
 				.addActionRow(input).build();
 		event.replyModal(modal).queue();
 	}
@@ -112,29 +115,44 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 
 		final CreateVoteData createVoteData = getCacheObject(event.getUser().getIdLong());
 		if (createVoteData == null) {
-			event.reply("Your vote creation timed out. Please try again.").setEphemeral(true).queue();
+			event.reply("Your poll creation timed out. Please try again.").setEphemeral(true).queue();
 			return;
 		}
 
-		final ModalMapping modal = event.getInteraction().getValue("VoteOptions");
+		final ModalMapping modal = event.getInteraction().getValue("PollOptions");
 		final String optionsStr = modal.getAsString();
 		final List<VoteOption> options = NEWLINE_SPLIT_PATTERN.splitAsStream(optionsStr)
 				.filter(option -> option != null && !option.isBlank()).map(VoteOption::create)
 				.collect(Collectors.toUnmodifiableList());
 
+		final Db db = Db.instance();
+		final VoteSettings settings;
+		final Vote vote;
+		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
+			final VoteSettings defaultSettings = db.getDefaultSettings(trans);
+			settings = VoteSettings.createWithDefaults(createVoteData.duration, createVoteData.votesPerUser,
+					createVoteData.canChangeVote, defaultSettings);
+			vote = Vote.create(settings, event.getChannel().getIdLong(), createVoteData.title,
+					createVoteData.description, options);
+		}
+
+		final String messageText = CommandUtil.createVoteText(vote);
+		if (messageText.length() >= 2000) {
+			event.reply(
+					"The message for the poll would exceed 2000 characters. Either use a shorter description or shorter options. You currently would use "
+							+ messageText.length() + " characters.")
+					.setEphemeral(true).queue();
+			return;
+		}
+
 		event.deferReply(false).complete();
 		final long messageId = event.getHook().retrieveOriginal().complete().getIdLong();
 
-		final Db db = Db.instance();
 		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
-			VoteSettings settings = db.getDefaultSettings(trans);
-			settings = VoteSettings.createWithDefaults(createVoteData.duration, createVoteData.votesPerUser,
-					createVoteData.canChangeVote, settings);
-			final Vote vote = Vote.create(settings, event.getChannel().getIdLong(), createVoteData.title,
-					createVoteData.description, options);
-			event.getHook().sendMessage(CommandUtil.createVoteText(vote))
-					.addActionRow(Button.primary(generateComponentId(START_VOTE_BUTTON_PREFIX), "Vote")).queue();
 			db.insertVote(trans, messageId, vote);
+			event.getHook().sendMessage(messageText)
+					.addActionRow(Button.primary(generateComponentId(START_VOTE_BUTTON_PREFIX), "Select Answer"))
+					.queue();
 		}
 	}
 }

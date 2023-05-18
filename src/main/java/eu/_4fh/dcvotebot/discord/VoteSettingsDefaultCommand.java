@@ -23,15 +23,15 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 public class VoteSettingsDefaultCommand extends AbstractCommandHandler<Void> {
 
 	protected VoteSettingsDefaultCommand(Bot bot) {
-		super(bot, "set-vo-def", "set-vote-defaults");
+		super(bot, "set-po-def", "set-poll-defaults");
 	}
 
 	@Override
 	@SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF", justification = "False-positive")
 	protected SlashCommandData createCommandData() {
-		SlashCommandData commandData = Commands.slash(command, "Sets default vote settings");
+		SlashCommandData commandData = Commands.slash(command, "Sets default poll settings");
 		CommandUtil.addVoteSettingsOptions(commandData, true);
-		commandData.addOption(OptionType.STRING, "timezone", "Timezone for the votes start and end.", true);
+		commandData.addOption(OptionType.STRING, "timezone", "Timezone for the poll start and end.", true);
 		commandData.setDefaultPermissions(DefaultMemberPermissions.DISABLED);
 		return commandData;
 	}
@@ -45,8 +45,8 @@ public class VoteSettingsDefaultCommand extends AbstractCommandHandler<Void> {
 		event.deferReply(true).queue();
 		try {
 			final Duration duration = CommandUtil.parseDuration(event.getOption("duration"));
-			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("votes-per-user"), (byte) 1, (byte) 25);
-			final Boolean usersCanChangeVote = CommandUtil.parseBoolean(event.getOption("users-can-change-vote"));
+			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("answers-per-user"), (byte) 1, (byte) 25);
+			final Boolean usersCanChangeVote = CommandUtil.parseBoolean(event.getOption("users-can-change-answer"));
 			final String timezoneStr = Optional.ofNullable(event.getOption("timezone")).map(OptionMapping::getAsString)
 					.orElse(null);
 			if (duration == null || votesPerUser == null || usersCanChangeVote == null || timezoneStr == null) {

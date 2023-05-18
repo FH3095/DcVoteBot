@@ -31,6 +31,9 @@ public class Config {
 	public final int interactionTimeout;
 	public final long updateIntervalMilliseconds;
 	public final long updateVotesTimeoutMinutes;
+	public final int updateRetryPause;
+	public final int updateMaxTries;
+	public final int deleteVotesOffsetDays;
 	public final HikariDataSource dataSource;
 
 	private Config() {
@@ -48,6 +51,11 @@ public class Config {
 		updateVotesTimeoutMinutes = Long.parseUnsignedLong(nonNull(props, "updateVoteMessages.timeout"));
 		Validate.inclusiveBetween(1, (long) 2 * 24 * 60, updateVotesTimeoutMinutes,
 				"updateVoteMessages.timeout must be >= 1 and <= 2880");
+		updateRetryPause = Integer.parseUnsignedInt(nonNull(props, "updateVoteMessages.RetryPauseSeconds"));
+		updateMaxTries = Integer.parseUnsignedInt(nonNull(props, "updateVoteMessages.RetryMaxTimes"));
+		deleteVotesOffsetDays = Integer.parseUnsignedInt(nonNull(props, "updateVoteMessages.DeleteVotesOffsetDays"));
+		Validate.inclusiveBetween(1, Integer.MAX_VALUE, deleteVotesOffsetDays,
+				"updateVoteMessages.DeleteVotesOffsetDays must be >= 1");
 		final HikariConfig hikariConfig = new HikariConfig(
 				readFile(System.getProperty("DcVoteBotHikariConfig", "hikari.cfg")));
 		hikariConfig.setAutoCommit(false);

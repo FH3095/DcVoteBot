@@ -18,6 +18,7 @@ import net.dv8tion.jda.api.interactions.modals.ModalInteraction;
 import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 import net.dv8tion.jda.api.requests.RestAction;
 import net.dv8tion.jda.api.requests.restaction.WebhookMessageCreateAction;
+import net.dv8tion.jda.api.requests.restaction.interactions.MessageEditCallbackAction;
 import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 
 /*package*/ class DiscordMocks {
@@ -29,6 +30,8 @@ import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 
 	/*package*/ static Bot botMock() {
 		final Bot bot = EasyMock.strictMock(Bot.class);
+		bot.updateVoteText(EasyMock.anyLong(), EasyMock.anyLong());
+		expectLastCall().asStub();
 		EasyMock.replay(bot);
 		return bot;
 	}
@@ -54,8 +57,8 @@ import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 		addOption(event, "title", "Test Title");
 		addOption(event, "description", "Test Description");
 		addOption(event, "duration", "1d 2h 3m");
-		addOption(event, "votes-per-user", "2");
-		addOption(event, "users-can-change-vote", "true");
+		addOption(event, "answers-per-user", "2");
+		addOption(event, "users-can-change-answer", "true");
 		return event;
 	}
 
@@ -85,7 +88,7 @@ import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 		expect(modalMapping.getAsString()).andStubReturn("Opt 1\r\rOpt 2\r\n\r\nOpt 3\n\nOpt 4\nOpt 5");
 		EasyMock.replay(modalMapping);
 		final ModalInteraction modalInteraction = EasyMock.strictMock(ModalInteraction.class);
-		expect(modalInteraction.getValue("VoteOptions")).andStubReturn(modalMapping);
+		expect(modalInteraction.getValue("PollOptions")).andStubReturn(modalMapping);
 		EasyMock.replay(modalInteraction);
 		expect(event.getInteraction()).andStubReturn(modalInteraction);
 
@@ -119,5 +122,32 @@ import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 		EasyMock.replay(hook);
 
 		return event;
+	}
+
+	/*package*/ static void stubCallback(final RestAction<?> mock) {
+		mock.queue();
+		expectLastCall().asStub();
+		expect(mock.complete()).andStubReturn(null);
+	}
+
+	/*package*/ static ReplyCallbackAction stubReply() {
+		final ReplyCallbackAction result = EasyMock.strictMock(ReplyCallbackAction.class);
+		stubCallback(result);
+		EasyMock.replay(result);
+		return result;
+	}
+
+	/*package*/ static MessageEditCallbackAction stubEdit() {
+		final MessageEditCallbackAction result = EasyMock.strictMock(MessageEditCallbackAction.class);
+		stubCallback(result);
+		EasyMock.replay(result);
+		return result;
+	}
+
+	/*package*/ static Guild guild(final long id) {
+		final Guild guild = EasyMock.strictMock(Guild.class);
+		expect(guild.getIdLong()).andStubReturn(id);
+		EasyMock.replay(guild);
+		return guild;
 	}
 }

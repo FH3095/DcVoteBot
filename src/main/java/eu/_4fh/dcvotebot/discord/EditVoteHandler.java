@@ -22,14 +22,14 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 /*package*/ class EditVoteHandler extends AbstractCommandHandler<Void> {
 
 	/*package*/ EditVoteHandler(final Bot bot) {
-		super(bot, "ed-vo", "edit-vote");
+		super(bot, "ed-po", "edit-poll");
 	}
 
 	@Override
 	@SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF", justification = "False-positive")
 	protected SlashCommandData createCommandData() {
-		final SlashCommandData commandData = Commands.slash(command, "Edits an existing vote").setGuildOnly(true);
-		commandData.addOptions(new OptionData(OptionType.STRING, "vote", "The vote to edit", true, true));
+		final SlashCommandData commandData = Commands.slash(command, "Edits an existing poll").setGuildOnly(true);
+		commandData.addOptions(new OptionData(OptionType.STRING, "poll", "The poll to edit", true, true));
 		CommandUtil.addCreateVoteOptions(commandData, false);
 		commandData.setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.MESSAGE_MANAGE));
 		return commandData;
@@ -55,24 +55,24 @@ import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 			final String title = event.getOption("title", OptionMapping::getAsString);
 			final String description = event.getOption("description", OptionMapping::getAsString);
 			final Duration duration = CommandUtil.parseDuration(event.getOption("duration"));
-			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("votes-per-user"), (byte) 1, (byte) 25);
-			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-vote"));
+			final Byte votesPerUser = CommandUtil.parseByte(event.getOption("answers-per-user"), (byte) 1, (byte) 25);
+			final Boolean usersCanChangeVotes = CommandUtil.parseBoolean(event.getOption("users-can-change-answer"));
 
 			final Db db = Db.instance();
 			try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
-				final long voteId = event.getOption("vote", 0L, OptionMapping::getAsLong);
+				final long voteId = event.getOption("poll", 0L, OptionMapping::getAsLong);
 				final Vote vote = db.getVote(trans, voteId);
 				final VoteSettings newSettings = VoteSettings.createWithDefaults(duration, votesPerUser,
 						usersCanChangeVotes, vote.settings);
 				final Vote newVote = Vote.createWithDefaults(newSettings, title, description, vote);
 				db.updateVote(trans, voteId, newVote);
-				event.getHook().sendMessage("Updated the vote. It could take some minutes to show up.").queue();
+				event.getHook().sendMessage("Updated the poll. It could take some minutes to show up.").queue();
 				bot.updateVoteText(event.getGuild().getIdLong(), voteId);
 			}
 		} catch (OptionValueException e) {
 			event.getHook().sendMessage(e.getMessage()).queue();
 		} catch (NotFoundException e) {
-			event.getHook().sendMessage("Cant find the vote you tried to edit").queue();
+			event.getHook().sendMessage("Cant find the poll you tried to edit").queue();
 		}
 	}
 }

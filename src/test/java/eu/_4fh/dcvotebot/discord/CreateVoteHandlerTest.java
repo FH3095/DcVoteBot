@@ -35,7 +35,7 @@ class CreateVoteHandlerTest {
 
 	@Test
 	void testSlashCommand() {
-		final SlashCommandInteractionEvent slashEvent = DiscordMocks.slashCommandInteractionEvent("create-vote");
+		final SlashCommandInteractionEvent slashEvent = DiscordMocks.slashCommandInteractionEvent("create-poll");
 		final Capture<Modal> modalCapture = EasyMock.newCapture(CaptureType.FIRST);
 		final ModalCallbackAction callback = EasyMock.niceMock(ModalCallbackAction.class);
 		expect(slashEvent.replyModal(EasyMock.capture(modalCapture))).andStubReturn(callback);
@@ -78,7 +78,7 @@ class CreateVoteHandlerTest {
 
 		final ModalInteractionEvent modalEvent = DiscordMocks
 				.modalInteractionEvent(handler.idPrefix + CreateVoteHandler.START_VOTE_DIALOG_PREFIX, 2L, 3L);
-		expect(modalEvent.reply("Your vote creation timed out. Please try again.")).andReturn(callback).once();
+		expect(modalEvent.reply("Your poll creation timed out. Please try again.")).andReturn(callback).once();
 		EasyMock.replay(modalEvent, callback);
 
 		handler.onModalInteraction(modalEvent);

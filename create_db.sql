@@ -19,7 +19,7 @@ CREATE TABLE votes (
   title varchar(100) NOT NULL,
   description varchar(1000) NOT NULL,
   start bigint(20) NOT NULL,
-  isClosed tinyint(1) NOT NULL DEFAULT 0,
+  lastEditMade tinyint(1) NOT NULL DEFAULT 0,
   votesPerVoter tinyint(4) NOT NULL,
   durationSeconds bigint(20) NOT NULL,
   voterCanChangeVotes tinyint(1) NOT NULL
@@ -47,7 +47,7 @@ ALTER TABLE votes
 ALTER TABLE votes
   ADD KEY idx_votes_serverId (serverId) USING BTREE;
 ALTER TABLE votes
-  ADD KEY idx_votes_isClosed (isClosed);
+  ADD KEY idx_votes_lastEditMade (lastEditMade);
 
 ALTER TABLE vote_options
   ADD PRIMARY KEY (id);

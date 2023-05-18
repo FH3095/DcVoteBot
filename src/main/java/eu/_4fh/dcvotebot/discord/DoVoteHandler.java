@@ -24,20 +24,20 @@ import net.dv8tion.jda.api.interactions.components.selections.StringSelectMenu;
 
 @DefaultAnnotation(NonNull.class)
 public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
-	/*package*/ static class VoteData {
+	/*package for test*/ static class VoteData {
 		private final long voteId;
-		private final BitSet votes = new BitSet(Vote.MAX_VOTE_OPTIONS);
+		/*package for test*/ final BitSet votes = new BitSet(Vote.MAX_VOTE_OPTIONS);
 
-		private VoteData(final long voteId) {
+		/*package for test*/ VoteData(final long voteId) {
 			this.voteId = voteId;
 		}
 	}
 
-	private static final String SEND_VOTE_BUTTON_PREFIX = "sendBtn";
-	private static final String SELECT_VOTES_PREFIX = "votesSel";
+	/*package for test*/ static final String SEND_VOTE_BUTTON_PREFIX = "answerSendBtn";
+	/*package for test*/ static final String SELECT_VOTES_PREFIX = "answersSel";
 
 	/*package*/ DoVoteHandler(final Bot bot) {
-		super(bot, "do-vo", null);
+		super(bot, "do-po", null);
 	}
 
 	@Override
@@ -45,7 +45,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 		return null;
 	}
 
-	private void handleVote(Db db, ButtonInteractionEvent event, VoteData data, Vote vote) {
+	/*package for test*/ void handleVote(Db db, ButtonInteractionEvent event, VoteData data, Vote vote) {
 		final long voterId = event.getUser().getIdLong();
 		final Set<Long> votersVotes = new HashSet<>();
 		boolean hasAlreadyVoted = false;
@@ -54,38 +54,43 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 			final VoteOption option = vote.options.get(i);
 			hasAlreadyVoted |= option.voters.contains(voterId);
 			if (data.votes.get(i)) {
-				votersVotes.add(vote.options.get(i).id);
+				votersVotes.add(option.id);
 				votesSet++;
 			}
 		}
 
 		final Instant voteEnd = vote.start.plus(vote.settings.duration);
 		if (Instant.now().isAfter(voteEnd)) {
-			event.getHook().editOriginal("This vote already ended.").setComponents(Collections.emptyList()).queue();
+			event.getHook().editOriginal("This poll already ended.").setComponents(Collections.emptyList()).queue();
 		} else if (hasAlreadyVoted && !vote.settings.canChangeAnswers) {
 			event.getHook().editOriginal("You already voted and can't change your answer.")
 					.setComponents(Collections.emptyList()).queue();
 		} else if (votesSet <= 0) {
-			event.getHook().editOriginal("You didn't select any vote option.").setComponents(Collections.emptyList())
+			event.getHook().editOriginal("You didn't select any answer.").setComponents(Collections.emptyList())
 					.queue();
 		} else if (votesSet > vote.settings.answersPerUser) {
-			event.getHook().editOriginal("You selected more than " + vote.settings.answersPerUser + " options.")
+			event.getHook().editOriginal("You selected more than " + vote.settings.answersPerUser + " answers.")
 					.setComponents(Collections.emptyList()).queue();
 		} else {
 			try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
 				db.updateVoteVotes(trans, voterId, data.voteId, votersVotes);
 			}
 			event.getHook()
-					.editOriginal("Saved your vote. It could take some minutes until the vote-message shows your vote.")
+					.editOriginal(
+							"Saved your answer. It could take some minutes until the poll-message shows your answers.")
 					.setComponents(Collections.emptyList()).queue();
 			bot.updateVoteText(event.getGuild().getIdLong(), data.voteId);
 		}
 	}
 
+	/*package for test*/ void forTestHandleSendVoteButton(final long userId, final ButtonInteractionEvent event) {
+		handleSendVoteButton(userId, event);
+	}
+
 	private void handleSendVoteButton(final long userId, final ButtonInteractionEvent event) {
 		final VoteData data = getCacheObject(userId);
 		if (data == null) {
-			event.editMessage("Your vote timed out. Please dismiss this message and click vote again.")
+			event.editMessage("Your answer timed out. Please dismiss this message and click Answer again.")
 					.setComponents(Collections.emptyList()).queue();
 			return;
 		}
@@ -120,7 +125,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 
 		final VoteData data = getCacheObject(event.getUser().getIdLong());
 		if (data == null) {
-			event.editMessage("Sorry, something went wrong. Please try to vote again.")
+			event.editMessage("Sorry, something went wrong. Please try to answer again.")
 					.setComponents(Collections.emptyList()).queue();
 			return;
 		}
@@ -142,7 +147,7 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 		try (Transaction trans = db.getTransaction(event.getGuild().getIdLong())) {
 			vote = db.getVote(trans, voteId);
 		} catch (NotFoundException e) {
-			event.getHook().sendMessage("This vote is already deleted from the bot.").queue();
+			event.getHook().sendMessage("This poll is already deleted from the bot.").queue();
 			return;
 		}
 
@@ -159,9 +164,9 @@ public class DoVoteHandler extends AbstractCommandHandler<VoteData> {
 		}
 		menuBuilder.setMinValues(1).setMaxValues(vote.settings.answersPerUser);
 
-		final Button sendButton = Button.primary(generateComponentId(SEND_VOTE_BUTTON_PREFIX), "Send vote");
+		final Button sendButton = Button.primary(generateComponentId(SEND_VOTE_BUTTON_PREFIX), "Send answer");
 
-		event.getHook().sendMessage("Select your vote").addActionRow(menuBuilder.build()).addActionRow(sendButton)
+		event.getHook().sendMessage("Select your answer").addActionRow(menuBuilder.build()).addActionRow(sendButton)
 				.queue();
 	}
 }

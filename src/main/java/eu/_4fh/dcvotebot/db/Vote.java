@@ -30,6 +30,12 @@ public class Vote {
 				Collections.unmodifiableList(new ArrayList<>(options)));
 	}
 
+	public static Vote createForTest(final VoteSettings settings, final long channelId, final String title,
+			final String description, final List<VoteOption> options, final Instant start) {
+		return new Vote(settings, channelId, title, description, start.truncatedTo(ChronoUnit.SECONDS),
+				Collections.unmodifiableList(new ArrayList<>(options)));
+	}
+
 	private static <T> T nonNull(@CheckForNull T v1, T v2) {
 		return v1 != null ? v1 : v2;
 	}
