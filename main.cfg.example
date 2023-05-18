@@ -1,10 +1,16 @@
-
-db.lockWaitTimeout=5
-db.dataDir=data
-
+# Number of discord shards
 discord.shards=1
+# Discord token to login
 discord.token=abcdef
-
+# Timeout for user-interactions (minutes)
 interaction.timeoutMinutes=15
-
+# Intervall in which to update messages (milliseconds)
 updateVoteMessages.intervall=500
+# Timeout for unavailable servers (minutes)
+updateVoteMessages.timeout=180
+# For how many seconds to pause an update, before retrying
+updateVoteMessages.RetryPauseSeconds=300
+# How often to retry, before giving up
+updateVoteMessages.RetryMaxTimes=36
+# Delete votes from the bot after X days
+updateVoteMessages.DeleteVotesOffsetDays=15

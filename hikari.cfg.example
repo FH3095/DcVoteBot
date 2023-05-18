@@ -1,5 +1,5 @@
 #driverClassName=org.h2.Driver
-#jdbcUrl=jdbc:h2:mem:testdb;MODE=MYSQL;INIT=runscript from 'create_db.sql'
+#jdbcUrl=jdbc:h2:mem:testdb;MODE=MYSQL;DB_CLOSE_DELAY=-1
 driverClassName=org.mariadb.jdbc.Driver
 jdbcUrl=jdbc:mariadb://localhost:3306/testdb?useServerPrepStmts=true
 
