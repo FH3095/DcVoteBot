@@ -25,7 +25,8 @@ public class Bot implements AutoCloseable {
 
 		doVoteHandler = new DoVoteHandler(this);
 		final AbstractCommandHandler<?>[] commands = { new CreateVoteHandler(this), doVoteHandler,
-				new EditVoteHandler(this), new VoteSettingsDefaultCommand(this) };
+				new EditVoteHandler(this), new VoteSettingsDefaultCommand(this),
+				new StatsCommand(this, voteUpdateHandler) };
 
 		final JDABuilder jdaBuilder = JDABuilder.createLight(Config.instance().discordToken, Collections.emptyList())
 				.setAutoReconnect(true).setMemberCachePolicy(MemberCachePolicy.NONE)

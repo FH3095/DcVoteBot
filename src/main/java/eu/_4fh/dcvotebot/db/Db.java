@@ -380,7 +380,7 @@ public class Db {
 	public Collection<Pair<Long, Long>> loadAndDeleteToUpdateVotes(final long serverId) {
 		try (Connection con = dataSource.getConnection();
 				PreparedStatement selStmt = con
-						.prepareStatement("SELECT serverId, messageId, FROM to_update_votes WHERE serverId = ?");
+						.prepareStatement("SELECT serverId, messageId FROM to_update_votes WHERE serverId = ?");
 				PreparedStatement delStmt = con.prepareStatement("DELETE FROM to_update_votes WHERE serverId = ?")) {
 			selStmt.setLong(1, serverId);
 			final List<Pair<Long, Long>> result = new ArrayList<>();

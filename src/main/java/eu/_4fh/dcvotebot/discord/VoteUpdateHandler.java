@@ -228,4 +228,10 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 			Log.getLog(this).log(Level.SEVERE, "Cant delete old votes", t);
 		}
 	}
+
+	public long todoQueueLength() {
+		synchronized (todoQueue) {
+			return todoQueue.size();
+		}
+	}
 }
