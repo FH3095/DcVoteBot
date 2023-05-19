@@ -32,6 +32,8 @@ import net.dv8tion.jda.api.requests.restaction.interactions.ReplyCallbackAction;
 		final Bot bot = EasyMock.strictMock(Bot.class);
 		bot.updateVoteText(EasyMock.anyLong(), EasyMock.anyLong());
 		expectLastCall().asStub();
+		bot.updateMessage(EasyMock.anyLong(), EasyMock.anyLong(), EasyMock.anyLong(), EasyMock.anyString());
+		expectLastCall().asStub();
 		EasyMock.replay(bot);
 		return bot;
 	}

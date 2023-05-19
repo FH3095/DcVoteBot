@@ -2,13 +2,13 @@ package eu._4fh.dcvotebot.discord;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Queue;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -40,7 +40,7 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 	private static class TodoElement {
 		public final long serverId;
 		public final long messageId;
-		public final Instant timeout;
+		public volatile Instant timeout; // NOSONAR Private class anyway
 		public volatile Instant nextTry; // NOSONAR Private class anyway
 		public AtomicInteger tries; // NOSONAR Private class anyway
 
@@ -58,7 +58,7 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 	private final Bot bot;
 	private final Db db;
 	private final ScheduledExecutorService executorService;
-	private final Queue<TodoElement> todoQueue;
+	private final Map<Long, TodoElement> todoQueue;
 	private final Set<Long> availableGuilds;
 	private final Duration updateTimeout;
 	private final Duration deleteVotesOffsetDays;
@@ -67,8 +67,7 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 		this.bot = bot;
 		updateTimeout = Duration.ofMinutes(Config.instance().updateVotesTimeoutMinutes);
 		this.db = Db.instance();
-		this.todoQueue = new ConcurrentLinkedQueue<>();
-		loadTodo();
+		this.todoQueue = new LinkedHashMap<>();
 		this.availableGuilds = ConcurrentHashMap.newKeySet();
 		this.executorService = new ScheduledThreadPoolExecutor(1);
 		this.tryIntervall = Duration.ofSeconds(Config.instance().updateRetryPause);
@@ -78,19 +77,24 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 
 	@Override
 	public void onGuildReady(GuildReadyEvent event) {
-		availableGuilds.add(event.getGuild().getIdLong());
+		final long guildId = event.getGuild().getIdLong();
+		availableGuilds.add(guildId);
+		loadTodo(guildId);
 	}
 
 	@Override
 	public void onGuildJoin(GuildJoinEvent event) {
-		availableGuilds.add(event.getGuild().getIdLong());
+		final long guildId = event.getGuild().getIdLong();
+		availableGuilds.add(guildId);
+		loadTodo(guildId);
 	}
 
 	@Override
 	public void onGuildAvailable(GuildAvailableEvent event) {
-		availableGuilds.add(event.getGuild().getIdLong());
-		Log.getLog(this).warning(
-				"Guild " + event.getGuild().getName() + "(" + event.getGuild().getId() + ") is now available again");
+		final long guildId = event.getGuild().getIdLong();
+		availableGuilds.add(guildId);
+		Log.getLog(this).warning("Guild " + event.getGuild().getName() + "(" + guildId + ") is now available again");
+		loadTodo(guildId);
 	}
 
 	@Override
@@ -112,19 +116,32 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 	}
 
 	private void saveTodo() {
-		final List<Long> messageIds = todoQueue.stream().map(e -> e.messageId).collect(Collectors.toUnmodifiableList());
+		final List<Pair<Long, Long>> messageIds;
+		synchronized (todoQueue) {
+			messageIds = todoQueue.values().stream().map(e -> Pair.of(e.serverId, e.messageId))
+					.collect(Collectors.toUnmodifiableList());
+		}
 		db.saveToUpdateVotes(messageIds);
 	}
 
-	private void loadTodo() {
-		final Collection<Pair<Long, Long>> todos = db.loadToUpdateVotes();
+	private void loadTodo(final long guildId) {
+		final Collection<Pair<Long, Long>> todos = db.loadAndDeleteToUpdateVotes(guildId);
 		todos.forEach(
 				serverAndMessageId -> addToUpdateVote(serverAndMessageId.getLeft(), serverAndMessageId.getRight()));
 	}
 
 	public void addToUpdateVote(final long serverId, final long messageId) {
-		final TodoElement element = new TodoElement(serverId, messageId, Instant.now().plus(updateTimeout));
-		todoQueue.add(element);
+		final Instant timeout = Instant.now().plus(updateTimeout);
+		synchronized (todoQueue) {
+			todoQueue.compute(messageId, (key, value) -> {
+				if (value == null) {
+					return new TodoElement(serverId, messageId, timeout);
+				} else {
+					value.timeout = timeout;
+					return value;
+				}
+			});
+		}
 	}
 
 	public void start() {
@@ -135,26 +152,28 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 	}
 
 	private @CheckForNull TodoElement getNextElement() {
-		final Instant now = Instant.now();
-		final List<TodoElement> bufferedElements = new ArrayList<>();
-		@CheckForNull
-		TodoElement element = null;
-		while (element == null && !todoQueue.isEmpty()) {
-			element = todoQueue.poll();
-			if (element != null) { // Race condition. Probably another thread removed the element between the while-condition and poll
+		synchronized (todoQueue) {
+			final Instant now = Instant.now();
+			final Map<Long, TodoElement> bufferedElements = new LinkedHashMap<>();
+			@CheckForNull
+			TodoElement element = null;
+			while (element == null && !todoQueue.isEmpty()) {
+				final Iterator<TodoElement> it = todoQueue.values().iterator();
+				element = it.next();
+				it.remove();
 				if (element.timeout.isBefore(now)) {
-					element = null; // Element is timed out. Just dont remember and dont use
+					element = null; // Element is timed out.
 				} else if (!availableGuilds.contains(element.serverId) || element.nextTry.isAfter(now)) {
-					bufferedElements.add(element);
+					bufferedElements.put(element.serverId, element);
 					element = null;
 				}
 			}
+			todoQueue.putAll(bufferedElements);
+			return element;
 		}
-		todoQueue.addAll(bufferedElements);
-		return element;
 	}
 
-	private void updateVote() {
+	/*package for test*/ void updateVote() {
 		final @CheckForNull TodoElement element = getNextElement();
 		if (element == null) {
 			return;
@@ -170,7 +189,9 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 			Log.getLog(this).log(Level.SEVERE, "Cant update vote " + element.messageId + " in try " + element.tries, t);
 			if (element.tries.get() < maxTries) {
 				element.nextTry = element.nextTry.plus(tryIntervall);
-				todoQueue.add(element);
+				synchronized (todoQueue) {
+					todoQueue.put(element.serverId, element);
+				}
 			}
 		}
 	}
@@ -185,7 +206,7 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 		saveTodo();
 	}
 
-	private void searchForVotesToEditLast() {
+	/*package for test*/ void searchForVotesToEditLast() {
 		try {
 			final Collection<Pair<Long, Long>> toUpdateVoteIds = db
 					.getVotesToLastUpdate(Instant.now().getEpochSecond());
@@ -198,7 +219,7 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 		}
 	}
 
-	private void deleteOldVotes() {
+	/*package for test*/ void deleteOldVotes() {
 		try {
 			final long deleteBefore = Instant.now().minus(deleteVotesOffsetDays).getEpochSecond();
 			final int deleted = db.deleteOldVotes(deleteBefore);

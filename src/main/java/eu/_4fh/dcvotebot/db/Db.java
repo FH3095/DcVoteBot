@@ -361,11 +361,13 @@ public class Db {
 		}
 	}
 
-	public void saveToUpdateVotes(final Collection<Long> messageIds) {
+	public void saveToUpdateVotes(final Collection<Pair<Long, Long>> serverAndMessageIds) {
 		try (Connection con = dataSource.getConnection();
-				PreparedStatement stmt = con.prepareStatement("INSERT INTO to_update_votes(messageId) VALUES (?)")) {
-			for (final long messageId : messageIds) {
-				stmt.setLong(1, messageId);
+				PreparedStatement stmt = con
+						.prepareStatement("INSERT INTO to_update_votes(serverId, messageId) VALUES (?,?)")) {
+			for (final Pair<Long, Long> serverAndMessageId : serverAndMessageIds) {
+				stmt.setLong(1, serverAndMessageId.getLeft());
+				stmt.setLong(2, serverAndMessageId.getRight());
 				stmt.addBatch();
 			}
 			stmt.executeBatch();
@@ -375,16 +377,23 @@ public class Db {
 		}
 	}
 
-	public Collection<Pair<Long, Long>> loadToUpdateVotes() {
+	public Collection<Pair<Long, Long>> loadAndDeleteToUpdateVotes(final long serverId) {
 		try (Connection con = dataSource.getConnection();
-				Statement stmt = con.createStatement();
-				ResultSet rs = stmt.executeQuery(
-						"SELECT serverId, messageId FROM votes WHERE messageId IN (SELECT messageId FROM to_update_votes)")) {
+				PreparedStatement selStmt = con
+						.prepareStatement("SELECT serverId, messageId, FROM to_update_votes WHERE serverId = ?");
+				PreparedStatement delStmt = con.prepareStatement("DELETE FROM to_update_votes WHERE serverId = ?")) {
+			selStmt.setLong(1, serverId);
 			final List<Pair<Long, Long>> result = new ArrayList<>();
-			while (rs.next()) {
-				result.add(Pair.of(rs.getLong(1), rs.getLong(2)));
+			try (ResultSet rs = selStmt.executeQuery()) {
+				while (rs.next()) {
+					result.add(Pair.of(rs.getLong(1), rs.getLong(2)));
+				}
 			}
-			con.rollback();
+
+			delStmt.setLong(1, serverId);
+			delStmt.executeUpdate();
+			con.commit();
+
 			return result;
 		} catch (SQLException e) {
 			return logAndThrow("Cant load to update votes", e);

@@ -19,7 +19,7 @@ import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
 import edu.umd.cs.findbugs.annotations.NonNull;
 
 @DefaultAnnotation(NonNull.class)
-public class Config {
+public class Config { // NOSONAR Yes, Singleton is correct
 	private static final Config instance = new Config();
 
 	public static Config instance() {
