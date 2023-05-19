@@ -99,8 +99,9 @@ class VoteUpdateHandlerTest {
 
 		final VoteSettings settings = VoteSettings.create(Duration.ofSeconds(1), (byte) 2, false, ZoneId.of("UTC"));
 		try (Db.Transaction trans = db.getTransaction(SERVER_ID)) {
-			final Vote vote2 = Vote.createWithDefaults(settings, "Test2", "Test Desc 2", db.getVote(trans, voteId));
+			final Vote vote1 = db.getVote(trans, voteId);
 			voteId++;
+			final Vote vote2 = Vote.createWithDefaults(settings, "Test2", "Test Desc 2", vote1);
 			db.insertVote(trans, voteId, vote2);
 		}
 		TimeUnit.SECONDS.sleep(2); // NOSONAR Just 2 seconds
