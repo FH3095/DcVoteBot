@@ -1,5 +1,6 @@
 /.gradle
 /bin
 /build
+/logs
 /hikari.cfg
 /main.cfg

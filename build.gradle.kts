@@ -23,6 +23,7 @@ application {
 }
 
 dependencies {
+	implementation("org.slf4j:slf4j-jdk14:1.7.+")
 	implementation("com.github.spotbugs:spotbugs-annotations:4.7.3")
 	implementation("com.github.ben-manes.caffeine:caffeine:3.1.4")
 	implementation("org.apache.commons:commons-lang3:3.12.0")
@@ -44,4 +45,8 @@ dependencies {
 val test by tasks.getting(Test::class) {
 	// Use junit platform for unit tests
 	useJUnitPlatform()
+}
+
+val startScripts by tasks.getting(CreateStartScripts::class) {
+	defaultJvmOpts = listOf("-Djava.util.logging.config.file=logging.properties")
 }

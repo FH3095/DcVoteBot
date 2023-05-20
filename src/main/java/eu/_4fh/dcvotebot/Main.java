@@ -78,6 +78,7 @@ public class Main {
 
 		try (final Bot bot = new Bot(shardId, shardTotal)) {
 			shutdown.acquireUninterruptibly();
+			Log.getLog(this).info("Initiating shutdown");
 		}
 	}
 }
