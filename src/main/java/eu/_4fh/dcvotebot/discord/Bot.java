@@ -1,5 +1,6 @@
 package eu._4fh.dcvotebot.discord;
 
+import java.time.Duration;
 import java.util.Collections;
 
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
@@ -62,7 +63,10 @@ public class Bot implements AutoCloseable {
 		if (jda != null) {
 			jda.shutdown();
 			try {
-				jda.awaitShutdown();
+				if (!jda.awaitShutdown(Duration.ofSeconds(90))) {
+					jda.shutdownNow();
+					jda.awaitShutdown();
+				}
 			} catch (InterruptedException e) {
 				// Ignore, shutting down anyway
 				Thread.currentThread().interrupt();
