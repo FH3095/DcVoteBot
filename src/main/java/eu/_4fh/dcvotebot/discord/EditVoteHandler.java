@@ -2,6 +2,8 @@ package eu._4fh.dcvotebot.discord;
 
 import java.time.Duration;
 
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import eu._4fh.dcvotebot.db.Db;
 import eu._4fh.dcvotebot.db.Db.NotFoundException;
@@ -19,6 +21,7 @@ import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 
+@DefaultAnnotation(NonNull.class)
 /*package*/ class EditVoteHandler extends AbstractCommandHandler<Void> {
 
 	/*package*/ EditVoteHandler(final Bot bot) {

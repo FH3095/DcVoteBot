@@ -15,6 +15,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import eu._4fh.dcvotebot.db.Db;
 import eu._4fh.dcvotebot.db.Db.Transaction;
 import eu._4fh.dcvotebot.db.Vote;
@@ -26,6 +28,7 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 
+@DefaultAnnotation(NonNull.class)
 /*package*/ class CommandUtil {
 	public static class OptionValueException extends Exception {
 		private static final long serialVersionUID = 5070766808630439218L;

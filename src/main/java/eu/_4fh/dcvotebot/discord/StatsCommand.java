@@ -4,6 +4,8 @@ import java.time.Duration;
 
 import org.apache.commons.lang3.time.DurationFormatUtils;
 
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import eu._4fh.dcvotebot.util.Config;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
@@ -11,6 +13,7 @@ import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 
+@DefaultAnnotation(NonNull.class)
 public class StatsCommand extends AbstractCommandHandler<Void> {
 
 	private final VoteUpdateHandler voteUpdateHandler;

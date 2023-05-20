@@ -3,6 +3,8 @@ package eu._4fh.dcvotebot;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.LogManager;
 
 import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -11,7 +13,30 @@ import eu._4fh.dcvotebot.util.Config;
 
 @DefaultAnnotation(NonNull.class)
 public class Main {
+	private static final class LoggingConfigUpdater implements Runnable {
+		@Override
+		public void run() {
+			try {
+				TimeUnit.SECONDS.sleep(60);
+				LogManager.getLogManager().updateConfiguration(null);
+			} catch (Throwable t) { // NOSONAR This thread shouldn't end
+				t.printStackTrace(System.err); // NOSONAR We just tried to update the logging configuration
+			}
+		}
+	}
+
 	public static void main(String[] args) {
+		try {
+			LogManager.getLogManager().readConfiguration();
+			LogManager.getLogManager().updateConfiguration(null); // Just to test that this works, try to update logging config
+		} catch (SecurityException | IOException e) {
+			throw new RuntimeException(e);
+		}
+
+		final Thread loggingConfigUpdaterThread = new Thread(new LoggingConfigUpdater(), "LoggingConfigUpdater");
+		loggingConfigUpdaterThread.setDaemon(true);
+		loggingConfigUpdaterThread.start();
+
 		new Main().run(args);
 	}
 
