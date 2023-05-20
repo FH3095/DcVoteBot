@@ -40,8 +40,9 @@ public class StatsCommand extends AbstractCommandHandler<Void> {
 		final long todoSize = voteUpdateHandler.todoQueueLength();
 		final long expectedToUpdateTimeMillis = Duration.ofMillis(Config.instance().updateIntervalMilliseconds)
 				.multipliedBy(todoSize).toMillis();
-		event.reply("Expected time to update a poll: "
-				+ DurationFormatUtils.formatDuration(expectedToUpdateTimeMillis, "HH:mm:ss")).setEphemeral(true)
-				.queue();
+		final String msg = "Expected time to update a poll: "
+				+ DurationFormatUtils.formatDuration(expectedToUpdateTimeMillis, "HH:mm:ss")
+				+ "\nGuilds on this shard: " + voteUpdateHandler.numShardGuilds();
+		event.reply(msg).setEphemeral(true).queue();
 	}
 }

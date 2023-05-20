@@ -234,4 +234,8 @@ public class VoteUpdateHandler extends ListenerAdapter implements AutoCloseable 
 			return todoQueue.size();
 		}
 	}
+
+	public long numShardGuilds() {
+		return availableGuilds.size();
+	}
 }
