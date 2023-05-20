@@ -31,9 +31,9 @@ dependencies {
 	implementation("com.zaxxer:HikariCP:5.0.1")
 	implementation("org.mariadb.jdbc:mariadb-java-client:3.0.+")
 
-    implementation("net.dv8tion:JDA:5.0.+") {
-        exclude("club.minnced", "opus-java")
-    }
+	implementation("net.dv8tion:JDA:5.0.+") {
+		exclude("club.minnced", "opus-java")
+	}
 
 	testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.2")
 	testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.2")
@@ -47,6 +47,16 @@ val test by tasks.getting(Test::class) {
 	useJUnitPlatform()
 }
 
+
 val startScripts by tasks.getting(CreateStartScripts::class) {
 	defaultJvmOpts = listOf("-Djava.util.logging.config.file=logging.properties")
+}
+
+distributions {
+	main {
+		contents {
+			from("logging.properties") { into("bin") }
+			from("logs/empty.txt") { into("logs") }
+		}
+	}
 }
